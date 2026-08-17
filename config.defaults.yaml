@@ -4,7 +4,7 @@ auth:
   # - browser: token extraction via browser
   # - rclone: paste rclone config
   # See docs/authentication.md
-  method: "login"
+  method: "browser"
 
   # Encrypted vault for secure token storage (AES-256-GCM)
   # Key is stored in OS keychain (desktop) or Docker secret (containers)
@@ -29,7 +29,12 @@ auth:
 
   # Browser-specific config (only used when method: browser)
   browser:
-    # Chrome DevTools Protocol endpoint for remote browser
+    # Open a window, wait for you to log in, extract tokens, close the window.
+    # Uses your installed Chrome/Edge when possible so no extra browser image.
+    launch: true
+    # Persistent profile for the launched window (cookies only, not a browser install)
+    userDataDir: "sessions/browser-profile"
+    # Chrome DevTools Protocol endpoint when launch: false (Docker / already-running Chrome)
     cdpEndpoint: "http://localhost:9222"
     # use this if you're running both app and browser docker containers:
     # cdpEndpoint: "http://browser:9222"
@@ -80,7 +85,7 @@ conversations:
   # When false (default), uses the primary Redux + IndexedDB store.
   useFallbackStore: true
 
-  # Enable syncing conversations to Proton servers (requires browser auth)
+  # Enable syncing conversations to Proton servers (browser auth, or login that got Lumo scope)
   enableSync: false
   # Project name for conversations (created if doesn't exist)
   projectName: lumo-tamer

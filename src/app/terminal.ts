@@ -43,8 +43,8 @@ Usage:
   tamer auth --help          Show this help
 
 Methods:
-  login                      Enter Proton credentials
-  browser                    Extract tokens from logged-in browser session
+  browser                    Open a window, log in to Lumo, window closes
+  login                      Enter Proton credentials (needs Go)
   rclone                     Paste rclone config section
 
 `);

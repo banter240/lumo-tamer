@@ -23,7 +23,7 @@ To sync conversations with other Lumo instances (web- or mobile apps), **browser
 ```yaml
 conversations:
   useFallbackStore: true          # true = fallback, false = ConversationStore (default: true)
-  enableSync: false               # Enable server sync (requires browser auth)
+  enableSync: false               # Enable server sync (browser, or login with Lumo scope)
   projectName: lumo-tamer         # Project name (created if doesn't exist)
   deriveIdFromUser: false         # For stateless clients (Home Assistant)
   databasePath: "sessions/"       # IndexedDB SQLite files location

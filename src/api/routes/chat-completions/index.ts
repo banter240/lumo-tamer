@@ -213,7 +213,7 @@ async function handleChatRequest(
     // Normal flow: call Lumo
     try {
       const result = await deps.queue.add(async () =>
-        deps.lumoClient.chatWithHistory(turns, processor.onChunk, {
+        deps.lumoClient!.chatWithHistory(turns, processor.onChunk, {
           requestTitle: ctx.requestTitle,
           instructions,
           injectInstructionsInto,

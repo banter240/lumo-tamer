@@ -117,6 +117,8 @@ const authConfigSchema = z.object({
     onError: z.boolean(),
   }),
   browser: z.object({
+    launch: z.boolean(),
+    userDataDir: z.string(),
     cdpEndpoint: z.string(),
   }),
   login: z.object({

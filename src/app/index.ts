@@ -5,6 +5,7 @@
  * providing a unified context for both CLI and API modes.
  */
 
+import { existsSync } from 'fs';
 import { getConversationsConfig, authConfig, mockConfig } from './config.js';
 import { logger } from './logger.js';
 import { resolveProjectPath } from './paths.js';
@@ -16,27 +17,50 @@ import { installFetchAdapter } from '../shims/fetch-adapter.js';
 import { suppressFullApiErrors } from '../shims/console.js';
 
 export class Application {
-  private lumoClient!: LumoClient;
-  private authProvider!: AuthProvider;
-  private authManager!: AuthManager;
-  private protonApi!: ProtonApi;
-  private uid!: string;
+  private lumoClient?: LumoClient;
+  private authProvider?: AuthProvider;
+  private authManager?: AuthManager;
+  private protonApi?: ProtonApi;
+  private uid?: string;
   private syncInitialized = false;
   private cleanupFetchAdapter?: () => void;
 
   /**
    * Create and initialize the application
    */
-  static async create(): Promise<Application> {
+  static async create(options: { allowMissingVault?: boolean } = {}): Promise<Application> {
     const app = new Application();
     if (mockConfig.enabled) {
       await app.initializeMock();
+    } else if (options.allowMissingVault && !app.vaultExists()) {
+      setConversationStore(getFallbackStore());
+      logger.warn('No auth vault. Open /auth in a browser to log in.');
     } else {
       await app.initializeAuth();
       await app.initializeStore();
       await app.initializeSync();
     }
     return app;
+  }
+
+  private vaultExists(): boolean {
+    return existsSync(resolveProjectPath(authConfig.vault.path));
+  }
+
+  isAuthenticated(): boolean {
+    return !!this.authManager && !!this.lumoClient;
+  }
+
+  /**
+   * Load a vault written by /auth or `tamer auth` without restarting.
+   */
+  async applyVaultAuth(): Promise<void> {
+    this.authManager?.destroy();
+    this.cleanupFetchAdapter?.();
+    this.cleanupFetchAdapter = undefined;
+    await this.initializeAuth();
+    await this.initializeStore();
+    await this.initializeSync();
   }
 
   /**
@@ -108,10 +132,16 @@ export class Application {
    */
   private async initializeStore(): Promise<void> {
     const conversationsConfig = getConversationsConfig();
+    const protonApi = this.protonApi;
+    const uid = this.uid;
+    const authProvider = this.authProvider;
+    if (!protonApi || !uid || !authProvider) {
+      throw new Error('Auth not initialized');
+    }
     await initializeConversationStore({
-      protonApi: this.protonApi,
-      uid: this.uid,
-      authProvider: this.authProvider,
+      protonApi,
+      uid,
+      authProvider,
       conversationsConfig,
     });
   }
@@ -121,10 +151,16 @@ export class Application {
    */
   private async initializeSync(): Promise<void> {
     const conversationsConfig = getConversationsConfig();
+    const protonApi = this.protonApi;
+    const uid = this.uid;
+    const authProvider = this.authProvider;
+    if (!protonApi || !uid || !authProvider) {
+      throw new Error('Auth not initialized');
+    }
     const result = await initializeSync({
-      protonApi: this.protonApi,
-      uid: this.uid,
-      authProvider: this.authProvider,
+      protonApi,
+      uid,
+      authProvider,
       conversationsConfig,
     });
     this.syncInitialized = result.initialized;
@@ -133,6 +169,9 @@ export class Application {
   // AppContext implementation
 
   getLumoClient(): LumoClient {
+    if (!this.lumoClient) {
+      throw new Error('Not authenticated. Open /auth or run: tamer auth');
+    }
     return this.lumoClient;
   }
 

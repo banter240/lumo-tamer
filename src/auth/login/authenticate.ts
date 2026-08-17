@@ -2,45 +2,47 @@
  * Login Authentication Entry Point
  *
  * Run interactive login using username/password credentials.
- * Used by CLI (tamer auth) for login authentication method.
+ * Used by CLI (tamer auth) and the /auth WebUI.
  */
 
 import { authConfig } from '../../app/config.js';
 import { logger } from '../../app/logger.js';
 import { resolveProjectPath } from '../../app/paths.js';
-import { runProtonAuth } from './proton-auth-cli.js';
-import { readVault, writeVault, type VaultKeyConfig } from '../vault/index.js';
+import { APP_VERSION_HEADER } from '@lumo/config.js';
+import { runProtonAuth, type ProtonAuthCredentials } from './proton-auth-cli.js';
+import type { SRPAuthResult } from './types.js';
+import { writeVault, type VaultKeyConfig } from '../vault/index.js';
+import { createProtonApi } from '../api-factory.js';
+import { fetchKeys, type FetchedKeys } from '../fetch-keys.js';
+import { hasProtonSyncKeys, isCaptchaAuthError } from '../sync-capability.js';
 import type { StoredTokens } from '../types.js';
 
-/**
- * Run login authentication
- *
- * Runs the Go binary for SRP authentication and saves tokens to encrypted vault.
- * Preserves sync data (userKeys, masterKeys) from existing vault if present.
- */
-export async function runLoginAuthentication(): Promise<void> {
-    const binaryPath = resolveProjectPath(authConfig.login.binaryPath);
+export type { ProtonAuthCredentials };
 
-    // Run the Go binary (interactive prompts for credentials)
-    const result = await runProtonAuth(binaryPath);
+export interface LoginAuthenticationResult {
+    sync: boolean;
+}
 
-    const vaultPath = resolveProjectPath(authConfig.vault.path);
-    const keyConfig: VaultKeyConfig = {
-        keychain: authConfig.vault.keychain,
-        keyFilePath: authConfig.vault.keyFilePath,
-    };
-
-    // Try to load existing vault to preserve sync data
-    let existingTokens: Partial<StoredTokens> = {};
+export async function loginWithLumoScope(
+    binaryPath: string,
+    credentials?: ProtonAuthCredentials
+): Promise<SRPAuthResult> {
+    const fallbackVersion = authConfig.login.appVersion;
     try {
-        existingTokens = await readVault(vaultPath, keyConfig);
-    } catch {
-        // No existing vault, start fresh
+        return await runProtonAuth(binaryPath, undefined, credentials, APP_VERSION_HEADER);
+    } catch (error) {
+        if (fallbackVersion !== APP_VERSION_HEADER && isCaptchaAuthError(error)) {
+            logger.warn('Lumo-scoped login hit CAPTCHA, retrying with configured app version (chat only)');
+            return await runProtonAuth(binaryPath, undefined, credentials, fallbackVersion);
+        }
+        throw error;
     }
+}
 
-    // Convert to unified StoredTokens format
-    // Preserve sync data (userKeys, masterKeys) from existing vault if present
-    // (UID is a session id that changes each login, not a user id)
+export async function tokensFromLoginResult(
+    result: SRPAuthResult,
+    fetched: FetchedKeys
+): Promise<StoredTokens> {
     const tokens: StoredTokens = {
         method: 'login',
         uid: result.uid,
@@ -49,13 +51,11 @@ export async function runLoginAuthentication(): Promise<void> {
         keyPassword: result.keyPassword,
         expiresAt: result.expiresAt || new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
         extractedAt: new Date().toISOString(),
-        userKeys: existingTokens.userKeys,
-        masterKeys: existingTokens.masterKeys,
+        userKeys: fetched.userKeys,
+        masterKeys: fetched.masterKeys,
     };
 
-    // Generate local keys if no existing keys and keyPassword available
-    // These enable local persistence without sync capability
-    if (!tokens.userKeys?.length && tokens.keyPassword) {
+    if (!hasProtonSyncKeys(tokens) && tokens.keyPassword) {
         const { generateLocalKeys } = await import('../key-generator.js');
         const generated = await generateLocalKeys(tokens.keyPassword);
         tokens.userKeys = generated.userKeys;
@@ -63,15 +63,42 @@ export async function runLoginAuthentication(): Promise<void> {
         logger.info('Generated local encryption keys (sync disabled)');
     }
 
+    return tokens;
+}
+
+/**
+ * Run login authentication and save tokens to the vault.
+ * Tries Lumo-scoped SRP first so conversation sync works; CAPTCHA falls back
+ * to the configured Drive/rclone app version (chat only).
+ */
+export async function runLoginAuthentication(
+    credentials?: ProtonAuthCredentials
+): Promise<LoginAuthenticationResult> {
+    const binaryPath = resolveProjectPath(authConfig.login.binaryPath);
+    const result = await loginWithLumoScope(binaryPath, credentials);
+
+    const api = createProtonApi({
+        uid: result.uid,
+        accessToken: result.accessToken,
+    });
+    const fetched = await fetchKeys(api);
+    const tokens = await tokensFromLoginResult(result, fetched);
+
+    const vaultPath = resolveProjectPath(authConfig.vault.path);
+    const keyConfig: VaultKeyConfig = {
+        keychain: authConfig.vault.keychain,
+        keyFilePath: authConfig.vault.keyFilePath,
+    };
     await writeVault(vaultPath, tokens, keyConfig);
 
-    const preservedSyncData = existingTokens.userKeys?.length || existingTokens.masterKeys?.length;
-
-    logger.info({ vaultPath }, 'Tokens saved to encrypted vault');
+    const sync = hasProtonSyncKeys(tokens);
+    logger.info({ vaultPath, sync }, 'Tokens saved to encrypted vault');
     logger.info({
         uid: tokens.uid.slice(0, 12) + '...',
         hasKeyPassword: !!tokens.keyPassword,
         expiresAt: tokens.expiresAt,
-        preservedSyncData: !!preservedSyncData,
+        sync,
     }, 'Login authentication complete');
+
+    return { sync };
 }

@@ -28,8 +28,8 @@ import { updateAuthConfig } from './update-config.js';
 import type { AuthMethod } from './types.js';
 import { print } from '../app/terminal.js';
 
-const numToMethod: Record<string, AuthMethod> = { '1': 'login', '2': 'browser', '3': 'rclone' };
-const methodToNum: Record<AuthMethod, string> = { login: '1', browser: '2', rclone: '3' };
+const numToMethod: Record<string, AuthMethod> = { '1': 'browser', '2': 'login', '3': 'rclone' };
+const methodToNum: Record<AuthMethod, string> = { browser: '1', login: '2', rclone: '3' };
 
 /**
  * Prompt user to select authentication method
@@ -38,8 +38,8 @@ async function promptForMethod(defaultMethod: AuthMethod): Promise<AuthMethod> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
   print('Select authentication method:');
-  print('  1. login   - Enter Proton credentials (requires Go binary)');
-  print('  2. browser - Extract from logged-in browser session');
+  print('  1. browser - Open a window, log in, window closes (recommended)');
+  print('  2. login   - Type email/password (needs Go, may hit CAPTCHA)');
   print('  3. rclone  - Paste rclone config section');
   print('');
 
@@ -51,7 +51,7 @@ async function promptForMethod(defaultMethod: AuthMethod): Promise<AuthMethod> {
       const input = answer.trim() || defaultNum;
 
       // Try parsing as number first, then as method name
-      const method = numToMethod[input] ?? authMethodSchema.safeParse(input).data ?? 'login';
+      const method = numToMethod[input] ?? authMethodSchema.safeParse(input).data ?? 'browser';
       resolve(method);
     });
   });
@@ -115,9 +115,15 @@ export async function runAuthCommand(argv: string[]): Promise<void> {
       case 'rclone':
         await runRcloneAuthentication();
         break;
-      case 'login':
-        await runLoginAuthentication();
+      case 'login': {
+        const login = await runLoginAuthentication();
+        if (login.sync) {
+          logger.info('Conversation sync enabled for this login');
+        } else {
+          logger.warn('Login succeeded without Lumo scope; conversation sync is off');
+        }
         break;
+      }
       default:
         throw new Error(`Unknown auth method: ${method}`);
     }

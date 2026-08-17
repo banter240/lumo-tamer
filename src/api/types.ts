@@ -5,7 +5,7 @@ import type { AuthManager } from '../auth/index.js';
 
 export interface EndpointDependencies {
   queue: RequestQueue;
-  lumoClient: LumoClient;
+  lumoClient?: LumoClient;
   conversationStore?: ConversationStore | FallbackStore;
   syncInitialized?: boolean;
   authManager?: AuthManager;

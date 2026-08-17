@@ -59,8 +59,13 @@ For Docker installation, see [Docker](#docker).
 
 ### 2. Authenticate
 
-- Run `tamer auth login`
-- Enter your Proton credentials and (optionally) 2FA code.
+```bash
+tamer auth
+```
+
+A window opens (Chrome/Edge if installed). Log in to Lumo as usual. Tokens are saved and the window closes. No extra browser container to keep around.
+
+Headless/Docker: `auth.browser.launch: false` plus the CDP flow in [docs/authentication.md](docs/authentication.md).
 
 <details>
 <summary><strong>I'm asked to enter a CAPTCHA</strong></summary>
@@ -72,9 +77,7 @@ Log in to Proton in a regular browser from the same IP first. This often clears 
 <summary><strong>Why do I have to enter my password?</strong></summary>
 
 Proton's security model doesn't allow for a simple OAuth authentication. Your credentials are not saved or logged, and security tokens are stored encrypted.
-Alternatively, you can authenticate via:
-- **browser**: Extract tokens from a Chrome session. Required when you want to sync conversations with Lumo's webclient.
-- **rclone**: Paste tokens from an rclone configuration with proton-drive.
+Alternatively: `tamer auth login` (password, may hit CAPTCHA) or `tamer auth rclone`.
 
 See [docs/authentication.md](docs/authentication.md) for details and troubleshooting.
 
@@ -305,6 +308,7 @@ The server implements a subset of OpenAI-compatible endpoints and has so far bee
 | `POST /v1/responses` | [OpenAI responses API](https://platform.openai.com/docs/api-reference/responses/create) |
 | `GET /v1/models` | List available models (`lumo`, `lumo-lite`, `lumo-max`) |
 | `GET /health` | Health check |
+| `GET /auth` | Proton login page (Docker / Portainer) |
 | `GET /metrics` | [Prometheus metrics](docs/development.md#metrics) |
 
 Following API clients have been tested and are known to work.
@@ -385,23 +389,18 @@ server:
 
 ### Authenticate
 
+Start only `tamer`, then open the login page in any browser (your laptop, phone, Portainer host, whatever):
+
 ```bash
-docker compose run --rm -it tamer auth login
+docker compose up -d tamer
+# open http://<host>:3003/auth
 ```
 
-Enter your Proton email, password, and 2FA code (if enabled).
+Type your Proton email, password, and 2FA if you use it. No extra Chromium container, no files to copy.
 
-<details>
-<summary><strong>I'm asked to enter a CAPTCHA</strong></summary>
+If Proton shows a CAPTCHA, open [lumo.proton.me](https://lumo.proton.me) once from the same internet as the server, then try `/auth` again.
 
-Log in to Proton in a regular browser from the same IP first. This often clears the challenge. If you're still hit with a CAPTCHA challenge after, you might want to try an [alternative auth method](docs/authentication.md).
-</details>
-
-<details>
-<summary><strong>Why do I have to enter my password?</strong></summary>
-
-Proton's security model doesn't allow for a simple OAuth authentication. Your credentials are not saved or logged, and security tokens are stored encrypted. [Read further](docs/authentication.md#security) for more information or other authentication methods.
-</details>
+`/auth` logs in as Lumo, so conversation sync works like the old browser flow. If Proton shows a CAPTCHA it falls back to chat-only; open [lumo.proton.me](https://lumo.proton.me) once from the same internet, then try again.
 
 ### Run
 Server:

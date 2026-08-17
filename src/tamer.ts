@@ -51,7 +51,7 @@ if (args._[0] === 'auth') {
 
   logger.info('Starting lumo-tamer API Server...');
 
-  const app = await Application.create();
+  const app = await Application.create({ allowMissingVault: true });
   const apiServer = new APIServer(app);
   await apiServer.start();
 

@@ -16,9 +16,9 @@ services:
       - NODE_ENV=production
     restart: unless-stopped
 
-  # Optional: Browser service
-  # Only needed when using "browser" auth method and you can't use your own browser.
-  # Runs Chromium with CDP enabled, UI accessible via :3001
+  # Optional: Browser service (last resort)
+  # Prefer http://<host>:3003/auth on the tamer container. Only start this
+  # if password login hits CAPTCHA or you need conversation sync.
   browser:
     # image: lscr.io/linuxserver/chromium:latest
     build:

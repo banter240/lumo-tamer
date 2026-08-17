@@ -7,8 +7,10 @@
  */
 
 import * as readline from 'readline';
+import { mkdir } from 'fs/promises';
 import { chromium, type Page, type BrowserContext, type Browser } from 'playwright';
 import { promises as dns, ADDRCONFIG } from 'dns';
+import { print } from '../../app/terminal.js';
 import type { PersistedSessionData } from '../../lumo-client/types.js';
 import type { StoredTokens } from '../types.js';
 import { authConfig, getConversationsConfig } from '../../app/config.js';
@@ -20,8 +22,12 @@ import { writeVault, type VaultKeyConfig } from '../vault/index.js';
 import { resolveProjectPath } from '../../app/paths.js';
 
 export interface ExtractionOptions {
-    /** CDP endpoint to connect to browser */
-    cdpEndpoint: string;
+    /** CDP endpoint to connect to an already-running browser (when launch is false) */
+    cdpEndpoint?: string;
+    /** Launch a headed window, then close it after extraction */
+    launch?: boolean;
+    /** Persistent profile dir for launched Chromium (cookies only) */
+    userDataDir?: string;
     /** Target URL (Lumo) */
     targetUrl: string;
     /** Whether to fetch persistence keys (userKeys, masterKeys) */
@@ -337,14 +343,111 @@ async function fetchMasterKeys(
     }
 }
 
+const isLumoLoggedIn = (url: string) =>
+    /lumo\.proton\.me/i.test(url) &&
+    !/\/guest/i.test(url) &&
+    !/account\.proton/i.test(url);
+
+async function waitForLumoLogin(page: Page, loginTimeout: number, closeOnTimeout: boolean): Promise<void> {
+    const currentUrl = page.url();
+    logger.info({ currentUrl }, 'Current URL');
+
+    const needsLogin =
+        currentUrl.includes('account.proton') ||
+        currentUrl.includes('/login') ||
+        /lumo\.proton\.me\/guest/i.test(currentUrl) ||
+        currentUrl === 'about:blank';
+
+    if (!needsLogin && isLumoLoggedIn(currentUrl)) {
+        return;
+    }
+
+    print('Log in to Proton in the browser window (CAPTCHA and 2FA work as usual).');
+    print('Waiting for Lumo...');
+    logger.info('Waiting for login...');
+
+    try {
+        await page.waitForURL(
+            /lumo\.proton\.me\/(u\/|chat|c\/|$)/,
+            { timeout: loginTimeout }
+        );
+        if (/\/guest/i.test(page.url())) {
+            await page.waitForURL(
+                /lumo\.proton\.me\/u\//,
+                { timeout: loginTimeout }
+            );
+        }
+        logger.info({ url: page.url() }, 'Login detected!');
+    } catch {
+        if (closeOnTimeout) {
+            try { await page.context().close(); } catch { /* ignore */ }
+        }
+        throw new Error('Login timeout. Please log in and try again.');
+    }
+}
+
+async function launchPersistentContext(userDataDir: string): Promise<BrowserContext> {
+    await mkdir(userDataDir, { recursive: true });
+    const attempts: Array<{ channel?: 'chrome' | 'msedge'; label: string }> = [
+        { channel: 'chrome', label: 'system Chrome' },
+        { channel: 'msedge', label: 'system Edge' },
+        { label: 'Playwright Chromium' },
+    ];
+
+    let lastError: unknown;
+    for (const attempt of attempts) {
+        try {
+            logger.info({ browser: attempt.label, userDataDir }, 'Launching browser');
+            return await chromium.launchPersistentContext(userDataDir, {
+                headless: false,
+                ...(attempt.channel ? { channel: attempt.channel } : {}),
+                viewport: { width: 1200, height: 800 },
+            });
+        } catch (error) {
+            lastError = error;
+            logger.debug({ browser: attempt.label, error }, 'Launch failed, trying next');
+        }
+    }
+
+    const message = lastError instanceof Error ? lastError.message : String(lastError);
+    throw new Error(
+        `Could not open a browser (${message}). Install Chrome, or run: npx playwright install chromium`
+    );
+}
+
+type BrowserSession = {
+    browser?: Browser;
+    context: BrowserContext;
+    page: Page;
+    launched: boolean;
+};
+
+async function launchAndGetPage(
+    userDataDir: string,
+    targetUrl: string,
+    loginTimeout: number
+): Promise<BrowserSession> {
+    const context = await launchPersistentContext(userDataDir);
+    try {
+        const page = context.pages()[0] || await context.newPage();
+        print('A browser window opened. Log in there; it closes when we have the session.');
+        await page.goto(targetUrl);
+        await waitForLumoLogin(page, loginTimeout, false);
+        return { context, page, launched: true };
+    } catch (error) {
+        try { await context.close(); } catch { /* ignore */ }
+        throw error;
+    }
+}
+
 /**
- * Connect to browser and get page for extraction
+ * Connect to an already-running browser via CDP and get a page.
  */
 async function connectAndGetPage(
     cdpEndpoint: string,
     targetUrl: string,
     loginTimeout: number
-): Promise<{ browser: Browser; context: BrowserContext; page: Page }> {
+): Promise<BrowserSession> {
     const resolvedEndpoint = await resolveCdpEndpoint(cdpEndpoint);
     logger.info({ cdpEndpoint, resolvedEndpoint }, 'Connecting to browser');
 
@@ -361,12 +464,6 @@ async function connectAndGetPage(
 
     logger.info({ pageCount: pages.length }, 'Found pages in browser context');
 
-    // Prefer an already-logged-in Lumo tab (Lumo 2.0 uses /u/<n>/… paths).
-    const isLumoLoggedIn = (url: string) =>
-        /lumo\.proton\.me/i.test(url) &&
-        !/\/guest/i.test(url) &&
-        !/account\.proton/i.test(url);
-
     let page =
         pages.find(p => isLumoLoggedIn(p.url())) ||
         pages.find(p => p.url().includes('lumo.proton.me'));
@@ -377,39 +474,8 @@ async function connectAndGetPage(
         await page.goto(targetUrl);
     }
 
-    const currentUrl = page.url();
-    logger.info({ currentUrl }, 'Current URL');
-
-    // Check if logged in (account host, login path, or Lumo guest landing)
-    const needsLogin =
-        currentUrl.includes('account.proton') ||
-        currentUrl.includes('/login') ||
-        /lumo\.proton\.me\/guest/i.test(currentUrl);
-
-    if (needsLogin) {
-        logger.warn('Not logged in. Please log in manually in the browser.');
-        logger.info('Waiting for login...');
-
-        try {
-            // Lumo 1.x: /chat, /c/…  |  Lumo 2.0: /u/<id>/…
-            await page.waitForURL(
-                /lumo\.proton\.me\/(u\/|chat|c\/|$)/,
-                { timeout: loginTimeout }
-            );
-            if (/\/guest/i.test(page.url())) {
-                await page.waitForURL(
-                    /lumo\.proton\.me\/u\//,
-                    { timeout: loginTimeout }
-                );
-            }
-            logger.info({ url: page.url() }, 'Login detected!');
-        } catch {
-            // Avoid browser.close() on CDP: it can tear down the debug session.
-            throw new Error('Login timeout. Please log in and try again.');
-        }
-    }
-
-    return { browser, context, page };
+    await waitForLumoLogin(page, loginTimeout, false);
+    return { browser, context, page, launched: false };
 }
 
 /**
@@ -424,11 +490,22 @@ async function connectAndGetPage(
  */
 export async function extractBrowserTokens(options: ExtractionOptions): Promise<ExtractionResult> {
     const warnings: string[] = [];
-    const { cdpEndpoint, targetUrl, fetchPersistenceKeys, appVersion, loginTimeout = 120000 } = options;
+    const {
+        cdpEndpoint,
+        launch = false,
+        userDataDir,
+        targetUrl,
+        fetchPersistenceKeys,
+        appVersion,
+        loginTimeout = 180000,
+    } = options;
 
-    logger.info('=== Browser Token Extraction ===');
+    logger.info({ launch }, '=== Browser Token Extraction ===');
 
-    const { browser, context, page } = await connectAndGetPage(cdpEndpoint, targetUrl, loginTimeout);
+    const session = launch
+        ? await launchAndGetPage(userDataDir ?? resolveProjectPath('sessions/browser-profile'), targetUrl, loginTimeout)
+        : await connectAndGetPage(cdpEndpoint ?? 'http://localhost:9222', targetUrl, loginTimeout);
+    const { context, page } = session;
 
     try {
         // Extract storage state (cookies + localStorage)
@@ -703,9 +780,18 @@ export async function extractBrowserTokens(options: ExtractionOptions): Promise<
             warnings.push('No keyPassword available - local-only encryption will be used');
         }
 
-        return { tokens, warnings, cdpEndpoint };
+        return { tokens, warnings, cdpEndpoint: cdpEndpoint ?? '' };
     } finally {
-        logger.debug('Browser connection closed, browser continues running');
+        if (session.launched) {
+            try {
+                await session.context.close();
+            } catch {
+                // already closed
+            }
+            logger.info('Login window closed');
+        } else {
+            logger.debug('CDP session left running');
+        }
     }
 }
 
@@ -733,13 +819,13 @@ async function promptForCdpEndpoint(defaultEndpoint?: string): Promise<string> {
  * @returns Extraction result
  */
 export async function runBrowserAuthentication(): Promise<ExtractionResult> {
-    const configEndpoint = authConfig.browser?.cdpEndpoint;
-    const cdpEndpoint = await promptForCdpEndpoint(configEndpoint);
-
+    const launch = authConfig.browser?.launch ?? true;
     const syncEnabled = getConversationsConfig().enableSync;
 
     const result = await extractBrowserTokens({
-        cdpEndpoint,
+        launch,
+        userDataDir: resolveProjectPath(authConfig.browser?.userDataDir ?? 'sessions/browser-profile'),
+        cdpEndpoint: launch ? undefined : await promptForCdpEndpoint(authConfig.browser?.cdpEndpoint),
         targetUrl: PROTON_URLS.LUMO_BASE,
         fetchPersistenceKeys: syncEnabled,
         appVersion: APP_VERSION_HEADER,

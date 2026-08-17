@@ -4,8 +4,8 @@ import { getMetrics, type MetricsService } from '../app/metrics.js';
 
 export function setupAuthMiddleware(apiKey: string): RequestHandler {
   return (req, res, next) => {
-    // Skip auth for health and metrics endpoints
-    if (req.path === '/health' || req.path === '/metrics') {
+    // Skip API-key check for health, metrics, and the login page
+    if (req.path === '/health' || req.path === '/metrics' || req.path === '/auth' || req.path.startsWith('/auth/')) {
       return next();
     }
 
@@ -15,6 +15,29 @@ export function setupAuthMiddleware(apiKey: string): RequestHandler {
       return res.status(401).json({ error: 'Invalid API key' });
     }
     next();
+  };
+}
+
+export function setupReadyMiddleware(isReady: () => boolean): RequestHandler {
+  return (req, res, next) => {
+    if (
+      req.path === '/health' ||
+      req.path === '/metrics' ||
+      req.path === '/auth' ||
+      req.path.startsWith('/auth/') ||
+      req.path === '/v1/models'
+    ) {
+      return next();
+    }
+    if (isReady()) {
+      return next();
+    }
+    return res.status(503).json({
+      error: {
+        message: 'Not authenticated. Open /auth in your browser and log in to Proton.',
+        type: 'auth_required',
+      },
+    });
   };
 }
 

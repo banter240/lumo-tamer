@@ -14,6 +14,8 @@ export interface SRPAuthResult {
     errorCode?: number;
 }
 
+export const SRP_ERROR_2FA_REQUIRED = 1002;
+
 // Configuration for SRP authentication
 export interface AuthConfig {
     method: 'srp' | 'browser';
