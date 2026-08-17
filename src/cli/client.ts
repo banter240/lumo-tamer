@@ -16,6 +16,7 @@ import type { Application } from '../app/index.js';
 import { randomUUID } from 'crypto';
 import * as readline from 'readline';
 import type { AssistantMessageData } from '../lumo-client/index.js';
+import { redactGeneratedImages } from '../lumo-client/images.js';
 import { blockHandlers, executeBlocks, formatResultsMessage } from './local-actions/block-handlers.js';
 import { CodeBlockDetector, type CodeBlock } from './local-actions/code-block-detector.js';
 import { buildCliInstructions } from './message-converter.js';
@@ -71,10 +72,10 @@ export class CLIClient {
         if (chunkCount === 0) clearBusyIndicator();
         if (detector) {
           const { text, blocks: newBlocks } = detector.processChunk(chunk);
-          print(text, false);
+          print(redactGeneratedImages(text), false);
           blocks.push(...newBlocks);
         } else {
-          print(chunk, false);
+          print(redactGeneratedImages(chunk), false);
         }
         chunkCount++;
       },
@@ -85,7 +86,7 @@ export class CLIClient {
     if (detector) {
       const final = detector.finalize();
       if (chunkCount === 0) clearBusyIndicator();
-      print(final.text, false);
+      print(redactGeneratedImages(final.text), false);
       blocks.push(...final.blocks);
     } else {
       if (chunkCount === 0) clearBusyIndicator();
@@ -117,7 +118,7 @@ export class CLIClient {
         query,
         (chunk) => {
           if (chunkCount === 0) clearBusyIndicator();
-          print(chunk, false);
+          print(redactGeneratedImages(chunk), false);
           chunkCount++;
         },
         { enableEncryption: true }

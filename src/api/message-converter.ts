@@ -14,6 +14,8 @@ import {
   resolveClientToolName,
 } from './tools/call-id.js';
 import { type MessageForStore } from 'src/conversations/types.js';
+import { extractImagesFromContent, fetchImageAsBase64 } from '../lumo-client/images.js';
+import { getImagesMaxBytes } from '../app/config.js';
 
 /**
  * Extract text from OpenAI-compatible content shapes.
@@ -132,6 +134,7 @@ export function extractSystemMessage(messages: OpenAIChatMessage[]): string | un
  */
 export async function convertOpenAIChatMessages(messages: OpenAIChatMessage[]): Promise<MessageForStore[]> {
   const result: MessageForStore[] = [];
+  const maxBytes = getImagesMaxBytes();
 
   for (const msg of messages) {
     // Skip system/developer messages - they're handled via instructions parameter
@@ -153,9 +156,14 @@ export async function convertOpenAIChatMessages(messages: OpenAIChatMessage[]): 
       continue;
     }
 
+    const { text, images } = await extractImagesFromContent(
+      'content' in msg ? msg.content : undefined,
+      { maxBytes, fetchUrl: (url) => fetchImageAsBase64(url, maxBytes) },
+    );
     result.push({
       role: msg.role === 'user' ? Role.User : Role.Assistant,
-      content: extractTextContent('content' in msg ? msg.content : undefined),
+      content: text,
+      ...(images.length > 0 ? { images } : {}),
     });
   }
 

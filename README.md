@@ -185,6 +185,21 @@ cli:
     filePath: "lumo-tamer-cli.log"
 ```
 
+### Images
+
+Lumo can generate, edit and describe images. Enable the native image tools:
+
+```yaml
+server:
+  enableImageTools: true
+  images:
+    maxInputBytes: "4mb"
+  bodyLimit: "5mb"    # inbound image_url payloads count against this
+```
+
+Inbound: OpenAI `image_url` / `input_image` (data URLs or http(s)) are forwarded as Lumo images.  
+Outbound: generated images are streamed as markdown data URLs (`![lumo:<id>](data:image/png;base64,...)`). The `lumo:<id>` alt text is the Proton image id, so a later `edit_image` / `describe_image` can find it.
+
 ### Web Search
 
 Enable Lumo's native web search (and other external tools: weather, stock, cryptocurrency):

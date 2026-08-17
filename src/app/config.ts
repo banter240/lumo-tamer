@@ -133,6 +133,10 @@ const serverMergedConfigSchema = z.object({
   conversations: conversationsConfigSchema,
   commands: z.object({ enabled: z.boolean(), wakeword: z.string() }),
   enableWebSearch: z.boolean(),
+  enableImageTools: z.boolean(),
+  images: z.object({
+    maxInputBytes: byteSizeSchema,
+  }),
   customTools: customToolsConfigSchema,
   instructions: serverInstructionsConfigSchema,
   metrics: metricsConfigSchema,
@@ -155,6 +159,10 @@ const cliMergedConfigSchema = z.object({
   conversations: conversationsConfigSchema,
   commands: z.object({ enabled: z.boolean(), wakeword: z.string() }),
   enableWebSearch: z.boolean(),
+  enableImageTools: z.boolean(),
+  images: z.object({
+    maxInputBytes: byteSizeSchema,
+  }),
   localActions: localActionsConfigSchema,
   instructions: cliInstructionsConfigSchema,
 });
@@ -244,6 +252,13 @@ export const getLogConfig = () => getConfig().log;
 export const getConversationsConfig = () => getConfig().conversations;
 export const getCommandsConfig = () => getConfig().commands;
 export const getEnableWebSearch = () => getConfig().enableWebSearch;
+export const getEnableImageTools = () => getConfig().enableImageTools;
+
+export function getImagesMaxBytes(): number {
+  const raw = getConfig().images.maxInputBytes;
+  if (typeof raw === 'number') return raw;
+  return bytes.parse(raw) ?? 4 * 1024 * 1024;
+}
 
 // Server-specific getters
 export function getServerConfig(): ServerMergedConfig {

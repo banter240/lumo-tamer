@@ -143,6 +143,13 @@ server:
   # Enable Lumo's native web_search tool (and other external tools: weather, stock, cryptocurrency)
   enableWebSearch: false
 
+  # Enable Lumo's native image tools (generate_image, describe_image, edit_image).
+  # Generated images come back as markdown data URLs. Inbound OpenAI image_url
+  # / input_image parts are forwarded to Lumo. Raise bodyLimit for large images.
+  enableImageTools: false
+  images:
+    maxInputBytes: "4mb"
+
   # Custom tool detection for API clients
   # Enable detection of JSON tool calls in Lumo's responses
   # WARNING: When enabled, Lumo can trigger actions via API clients!
@@ -235,6 +242,10 @@ cli:
 
   # Enable Lumo's native web_search tool (and other external tools: weather, stock, cryptocurrency)
   enableWebSearch: false
+
+  enableImageTools: false
+  images:
+    maxInputBytes: "4mb"
 
   # Local actions: code block detection and execution
   localActions:

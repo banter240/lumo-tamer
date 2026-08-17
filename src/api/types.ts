@@ -31,7 +31,7 @@ export interface AssistantMessageWithToolCalls {
 // Standard message with role and content
 export interface StandardChatMessage {
   role: 'user' | 'assistant' | 'system';
-  content: string;
+  content: string | unknown;
 }
 
 // Union type for all possible chat messages in requests

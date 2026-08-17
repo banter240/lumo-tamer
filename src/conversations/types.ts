@@ -81,4 +81,5 @@ export interface MessageForStore {
     role: Role;
     content?: string;
     id?: string; // Semantic ID for deduplication (call_id for tools)
+    images?: import('@lumo/types-api.js').WireImage[];
 }

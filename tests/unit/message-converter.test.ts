@@ -74,6 +74,24 @@ describe('convertOpenAIChatMessages', () => {
     expect(turns).toEqual([]);
   });
 
+  it('forwards OpenAI image_url parts as Lumo images', async () => {
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    const turns = await convertOpenAIChatMessages([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'what is this' },
+          { type: 'image_url', image_url: { url: `data:image/png;base64,${png}` } },
+        ],
+      } as any,
+    ]);
+
+    expect(turns).toHaveLength(1);
+    expect(turns[0].content).toBe('what is this');
+    expect(turns[0].images).toHaveLength(1);
+    expect(turns[0].images![0].data).toBe(png);
+    expect(turns[0].images![0].encrypted).toBe(false);
+  });
 });
 
 describe('convertOpenAIResponseMessages', () => {

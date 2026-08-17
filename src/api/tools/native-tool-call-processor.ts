@@ -20,7 +20,8 @@ import { logger } from '../../app/logger.js';
 import type { ParsedToolCall } from './types.js';
 
 const KNOWN_NATIVE_TOOLS = new Set([
-  'proton_info', 'web_search', 'weather', 'stock', 'cryptocurrency'
+  'proton_info', 'web_search', 'weather', 'stock', 'cryptocurrency',
+  'generate_image', 'describe_image', 'edit_image',
 ]);
 
 // ── Internal helpers ─────────────────────────────────────────────────

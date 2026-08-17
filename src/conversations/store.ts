@@ -19,6 +19,7 @@ import { deterministicUUID } from '../app/id-generator.js';
 import { logger } from '../app/logger.js';
 import { getMetrics } from '../app/metrics.js';
 import type { AssistantMessageData, Turn } from '../lumo-client/types.js';
+import { turnFromStoredContent } from '../lumo-client/images.js';
 import {
     findNewMessages,
     hashMessage,
@@ -516,10 +517,7 @@ export class ConversationStore {
      * Convert conversation to Lumo Turn[] format
      */
     toTurns(id: ConversationId): Turn[] {
-        return this.getMessages(id).map(({ role, content }) => ({
-            role,
-            content,
-        }));
+        return this.getMessages(id).map(({ role, content }) => turnFromStoredContent(role, content));
     }
 
     /**

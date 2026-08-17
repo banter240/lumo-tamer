@@ -130,6 +130,14 @@ describe('NativeToolCallProcessor', () => {
       expect(processor.getResult().misrouted).toBe(false);
     });
 
+    it('does not flag native image tools as misrouted', () => {
+      const processor = new NativeToolCallProcessor();
+      const shouldAbort = processor.feedToolCall('{"name":"generate_image","parameters":{"prompt":"a cat"}}');
+      processor.finalize();
+      expect(shouldAbort).toBe(false);
+      expect(processor.getResult().misrouted).toBe(false);
+    });
+
     it('does not flag misrouted in bounce mode', () => {
       const processor = new NativeToolCallProcessor(true); // isBounce = true
 

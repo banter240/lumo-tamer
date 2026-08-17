@@ -5,7 +5,7 @@
  * a small message union the LumoClient consumes. Mirrors the dispatch logic of
  * ProtonMail/WebClients applications/lumo/src/app/lib/lumo-api-client/core/streaming.ts
  * (processOpenAiChunk / processDelta / processToolCallDelta / chat.tool_call|result),
- * kept as a local adapter scoped to what this proxy needs (no image handling).
+ * kept as a local adapter scoped to what this proxy needs.
  *
  * Content and reasoning arrive encrypted (U2L) and are decrypted by the caller
  * using the per-request AD; this parser only surfaces the `encrypted` flag.
@@ -13,10 +13,19 @@
 
 import type { LumoUsage } from './types.js';
 
+function pickString(value: unknown): string | undefined {
+    return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function pickBool(value: unknown): boolean | undefined {
+    return typeof value === 'boolean' ? value : undefined;
+}
+
 export type V2StreamMessage =
     | { type: 'token_data'; target: 'message' | 'reasoning' | 'tool_call'; content: string; encrypted?: boolean }
     | { type: 'server_tool_call'; call_id?: string; name: string; arguments?: string; encrypted?: boolean }
     | { type: 'server_tool_result'; call_id?: string; content: string; encrypted?: boolean }
+    | { type: 'image_data'; image_id?: string; data?: string; is_final?: boolean; encrypted?: boolean }
     | { type: 'usage'; usage: LumoUsage }
     | { type: 'harmful' }
     | { type: 'error'; message?: string }
@@ -113,8 +122,22 @@ export class V2StreamProcessor {
             return;
         }
 
-        if (objectType === 'lumo.image_data') {
-            return; // image generation not surfaced by this proxy
+        if (objectType === 'lumo.image_data' || objectType === 'image_data') {
+            const nested = (obj.image && typeof obj.image === 'object')
+                ? obj.image as Record<string, unknown>
+                : obj;
+            const image_id = pickString(nested.image_id) ?? pickString(nested.id) ?? pickString(obj.image_id);
+            const data = pickString(nested.data) ?? pickString(obj.data);
+            const is_final = pickBool(nested.is_final) ?? pickBool(obj.is_final);
+            const encrypted = !!(nested.encrypted ?? obj.encrypted);
+            out.push({
+                type: 'image_data',
+                ...(image_id ? { image_id } : {}),
+                ...(data ? { data } : {}),
+                ...(is_final !== undefined ? { is_final } : {}),
+                encrypted,
+            });
+            return;
         }
 
         // OpenAI-style completion chunk.
