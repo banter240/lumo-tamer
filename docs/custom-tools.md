@@ -13,7 +13,7 @@ Custom tool support is experimental. Tool calls can fail because of:
 - **Too many tools**: Lumo gets confused when the client provides many tools or (very) long instructions.
 - **Misrouted calls**: Lumo routes custom tools through its native pipeline, which fails server-side. lumo-tamer bounces these back, but this adds latency and isn't always reliable.
 - **Wrong tool/arguments**: Lumo sets the wrong tool name or arguments.
-- **Detection failures**: JSON code blocks are not properly detected or parsed.
+- **Detection failures**: JSON code blocks or mid-line `{"name":…}` objects are not properly detected or parsed. Example JSON that names a tool not in the request is left as text.
 
 This requires trial and error. Experiment with `server.instructions` settings to improve results.
 

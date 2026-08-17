@@ -16,6 +16,7 @@ import type { Turn } from '../../../lumo-client/index.js';
 import type { ConversationId } from '../../../conversations/index.js';
 import { generateCallId } from '../../tools/call-id.js';
 import { createStreamingToolProcessor } from '../../tools/streaming-processor.js';
+import { extractClientToolNames } from '../../tools/prefix.js';
 import {
   buildRequestContext,
   persistTitle,
@@ -179,15 +180,19 @@ export async function handleRequest(
   } else {
     // Normal flow: call Lumo
     let nextOutputIndex = 1;
-    const processor = createStreamingToolProcessor(ctx.hasCustomTools, {
-      emitTextDelta(text) {
-        accumulatedText += text;
-        emitter?.emitOutputTextDelta(itemId, 0, 0, text);
+    const processor = createStreamingToolProcessor(
+      ctx.hasCustomTools,
+      {
+        emitTextDelta(text) {
+          accumulatedText += text;
+          emitter?.emitOutputTextDelta(itemId, 0, 0, text);
+        },
+        emitToolCall(callId, tc) {
+          emitter?.emitFunctionCallEvents(id, callId, tc.name, JSON.stringify(tc.arguments), nextOutputIndex++);
+        },
       },
-      emitToolCall(callId, tc) {
-        emitter?.emitFunctionCallEvents(id, callId, tc.name, JSON.stringify(tc.arguments), nextOutputIndex++);
-      },
-    });
+      extractClientToolNames(request.tools),
+    );
 
     try {
       const result = await deps.queue.add(async () =>

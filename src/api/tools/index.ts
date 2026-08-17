@@ -9,6 +9,7 @@ export {
   applyToolPrefix,
   stripToolPrefix,
   applyToolNamePrefix,
+  extractClientToolNames,
 } from './prefix.js';
 
 // Tool call types

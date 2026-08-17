@@ -8,6 +8,11 @@
  *
  * Buffers tool JSON and emits it separately from normal text.
  * Raw JSON brace tracking is delegated to JsonBraceTracker.
+ *
+ * Own-line `{ "` is treated as a candidate object (pretty-print, OpenAI nested
+ * shape). Mid-line only `{"name":` is, so prose JSON is left alone.
+ * Optional `knownToolNames` rejects example JSON that names a tool the client
+ * did not register.
  */
 
 import { JsonBraceTracker } from './json-brace-tracker.js';
@@ -26,20 +31,33 @@ export interface ProcessResult {
   completedToolCalls: ParsedToolCall[];
 }
 
-/**
- * Streaming tool detector that processes chunks and separates
- * tool call JSON from normal message text.
- */
+export interface StreamingToolDetectorOptions {
+  /**
+   * Client tool names (unprefixed). When set, JSON that looks like a tool call
+   * but names an unknown tool is left as text instead of being executed.
+   */
+  knownToolNames?: Iterable<string>;
+}
+
 export class StreamingToolDetector {
   private state: DetectorState = 'normal';
   private buffer = '';
   private pendingText = '';
   private jsonTracker = new JsonBraceTracker();
+  private readonly knownToolNames: Set<string> | null;
 
-  // Patterns for detection
-  private static readonly CODE_FENCE_START = /```(?:json)?\s*$/;
-  private static readonly CODE_FENCE_END = /```/;
-  private static readonly RAW_JSON_START = /\{[\s"']/;
+  // Line-start / own-line object: any `{ "` (pretty-printed, OpenAI nested shape, …)
+  private static readonly LINE_START_JSON = /(?:^|\n)\s*(\{[\n\s]*")/;
+  // Mid-line: only objects that start with `"name"` so prose `{ "foo": … }` is left alone.
+  // Optional whitespace so both `{"name":` and `{\n  "name":` match.
+  private static readonly INLINE_TOOL_JSON = /\{\s*"name"\s*:/;
+
+  constructor(options: StreamingToolDetectorOptions = {}) {
+    const names = options.knownToolNames
+      ? [...options.knownToolNames].filter(Boolean)
+      : [];
+    this.knownToolNames = names.length > 0 ? new Set(names) : null;
+  }
 
   private showSnippet(index: number) {
     return this.pendingText.substring(Math.max(index - 7, 0), index + 7).replace(/\n/g, "\\n");
@@ -106,13 +124,10 @@ export class StreamingToolDetector {
       return;
     }
 
-    // Look for raw JSON start (but be careful - need context)
-    // Only match if it looks like start of a tool call object
-    const jsonMatch = this.pendingText.match(/(?:^|\n)\s*(\{[\n\s]*")/);
-    if (jsonMatch && jsonMatch.index !== undefined) {
-      logger.debug(`Raw JSON opener found: ${this.showSnippet(jsonMatch.index)}`);
-
-      const startIdx = jsonMatch.index + (jsonMatch[0].length - jsonMatch[1].length);
+    // Look for raw JSON start. Line-start matches any `{ "`; mid-line only `{"name":`.
+    const startIdx = this.findRawJsonStart();
+    if (startIdx !== null) {
+      logger.debug(`Raw JSON opener found: ${this.showSnippet(startIdx)}`);
 
       // Emit text before the JSON
       if (startIdx > 0) {
@@ -125,7 +140,8 @@ export class StreamingToolDetector {
     }
 
     // No pattern found - emit all but keep last few chars for partial match detection
-    const keepChars = 10; // Keep enough for "```" pattern
+    // Long enough for ```json / `{"name":` arriving across chunk boundaries
+    const keepChars = 16;
     if (this.pendingText.length > keepChars) {
       result.textToEmit += this.pendingText.slice(0, -keepChars);
       this.pendingText = this.pendingText.slice(-keepChars);
@@ -217,6 +233,33 @@ export class StreamingToolDetector {
   }
 
   /**
+   * Find the start index of a raw JSON object that might be a tool call.
+   * Prefers the earliest of: own-line `{ "`, or mid-line `{"name":`.
+   */
+  private findRawJsonStart(): number | null {
+    const lineMatch = this.pendingText.match(StreamingToolDetector.LINE_START_JSON);
+    const inlineMatch = this.pendingText.match(StreamingToolDetector.INLINE_TOOL_JSON);
+
+    let startIdx: number | undefined;
+    if (lineMatch && lineMatch.index !== undefined) {
+      startIdx = lineMatch.index + (lineMatch[0].length - lineMatch[1].length);
+    }
+    if (inlineMatch && inlineMatch.index !== undefined) {
+      if (startIdx === undefined || inlineMatch.index < startIdx) {
+        startIdx = inlineMatch.index;
+      }
+    }
+    return startIdx ?? null;
+  }
+
+  /**
+   * True when this name is allowed (or no allow-list was configured).
+   */
+  private isKnownTool(toolName: string): boolean {
+    return !this.knownToolNames || this.knownToolNames.has(toolName);
+  }
+
+  /**
    * Try to extract a tool name from content, even if JSON is malformed.
    * Uses regex to find "name": "..." pattern.
    * Returns null if no name found (indicating this isn't a tool call attempt).
@@ -252,6 +295,9 @@ export class StreamingToolDetector {
         if (!normalized) return null;
         const prefix = getCustomToolsConfig().prefix;
         const toolName = stripToolPrefix(normalized.name, prefix);
+        if (!this.isKnownTool(toolName)) {
+          return null;
+        }
         logger.info(`Tool call detected: ${content.replace(/\n/g, ' ').substring(0, 100)}...`);
         return {
           name: toolName,
@@ -262,13 +308,16 @@ export class StreamingToolDetector {
       if ('name' in parsed && typeof parsed.name === 'string') {
         const prefix = getCustomToolsConfig().prefix;
         const toolName = stripToolPrefix(parsed.name, prefix);
+        if (!this.isKnownTool(toolName)) {
+          return null;
+        }
         this.trackInvalidToolCall('missing arguments', content, toolName);
       }
       // Otherwise it's just regular JSON, don't track
     } catch {
       // JSON parse failed - only track if regex finds a name (looks like attempted tool call)
       const toolName = this.extractToolName(content);
-      if (toolName) {
+      if (toolName && this.isKnownTool(toolName)) {
         this.trackInvalidToolCall('malformed JSON', content, toolName);
       }
       // Otherwise it's just broken/regular JSON, don't track

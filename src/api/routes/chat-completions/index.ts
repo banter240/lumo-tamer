@@ -12,6 +12,7 @@ import type { Turn } from '../../../lumo-client/index.js';
 import type { ConversationId } from '../../../conversations/types.js';
 import { trackCustomToolCompletion } from '../../tools/call-id.js';
 import { createStreamingToolProcessor } from '../../tools/streaming-processor.js';
+import { extractClientToolNames } from '../../tools/prefix.js';
 import {
   buildRequestContext,
   persistTitle,
@@ -185,15 +186,19 @@ async function handleChatRequest(
   let reasoningContent: string | undefined;
   let toolCalls: typeof processor.toolCallsEmitted | undefined;
 
-  const processor = createStreamingToolProcessor(ctx.hasCustomTools, {
-    emitTextDelta(text) {
-      accumulatedText += text;
-      emitter?.emitContentDelta(text);
+  const processor = createStreamingToolProcessor(
+    ctx.hasCustomTools,
+    {
+      emitTextDelta(text) {
+        accumulatedText += text;
+        emitter?.emitContentDelta(text);
+      },
+      emitToolCall(callId, tc) {
+        emitter?.emitToolCallDelta(callId, tc.name, tc.arguments);
+      },
     },
-    emitToolCall(callId, tc) {
-      emitter?.emitToolCallDelta(callId, tc.name, tc.arguments);
-    },
-  });
+    extractClientToolNames(request.tools),
+  );
 
   // Check for command before calling Lumo
   const commandResult = await tryExecuteCommand(turns, ctx.commandContext);

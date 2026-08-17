@@ -183,6 +183,29 @@ describe('StreamingToolDetector', () => {
       expect(allToolCalls[0].name).toBe('test');
       expect(allToolCalls[0].arguments).toEqual({ text: 'hello {world} bye' });
     });
+
+    it('detects tool call JSON after prose on the same line', () => {
+      const detector = new StreamingToolDetector();
+      const { allText, allToolCalls } = processAll(detector, [
+        'Here is the file content: {"name":"read","arguments":{"path":"README.md"}}',
+      ]);
+
+      expect(allToolCalls).toHaveLength(1);
+      expect(allToolCalls[0]).toEqual({ name: 'read', arguments: { path: 'README.md' } });
+      expect(allText).toContain('Here is the file content:');
+      expect(allText).not.toContain('"name":"read"');
+    });
+
+    it('detects inline tool JSON split across chunks before the brace', () => {
+      const detector = new StreamingToolDetector();
+      const { allToolCalls } = processAll(detector, [
+        'Calling now: {',
+        '"name":"read","arguments":{"path":"a.txt"}}',
+      ]);
+
+      expect(allToolCalls).toHaveLength(1);
+      expect(allToolCalls[0].name).toBe('read');
+    });
   });
 
   describe('non-tool content', () => {
@@ -197,6 +220,40 @@ describe('StreamingToolDetector', () => {
       expect(allToolCalls).toHaveLength(0);
       expect(allText).toContain('foo');
       expect(allText).toContain('bar');
+    });
+
+    it('leaves mid-line JSON that is not a tool call as text', () => {
+      const detector = new StreamingToolDetector();
+      const { allText, allToolCalls } = processAll(detector, [
+        'Config: {"foo":"bar","baz":123} done',
+      ]);
+
+      expect(allToolCalls).toHaveLength(0);
+      expect(allText).toContain('{"foo":"bar","baz":123}');
+    });
+  });
+
+  describe('known tool names', () => {
+    it('accepts an inline call only when the name is registered', () => {
+      const detector = new StreamingToolDetector({ knownToolNames: ['read'] });
+      const { allText, allToolCalls } = processAll(detector, [
+        'Here is the file content: {"name":"read","arguments":{"path":"README.md"}}',
+      ]);
+
+      expect(allToolCalls).toHaveLength(1);
+      expect(allToolCalls[0].name).toBe('read');
+      expect(allText).not.toContain('"name":"read"');
+    });
+
+    it('emits example JSON as text when the name is not registered', () => {
+      const detector = new StreamingToolDetector({ knownToolNames: ['read'] });
+      const json = '{"name":"example_tool","arguments":{"param":"value"}}';
+      const { allText, allToolCalls } = processAll(detector, [
+        `For example ${json} in the docs`,
+      ]);
+
+      expect(allToolCalls).toHaveLength(0);
+      expect(allText).toContain(json);
     });
   });
 });
