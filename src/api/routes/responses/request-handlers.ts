@@ -23,7 +23,6 @@ import {
   persistAssistantTurn,
   generateResponseId,
   generateItemId,
-  generateFunctionCallId,
   mapToolCallsForPersistence,
   tryExecuteCommand,
   setSSEHeaders,
@@ -70,11 +69,14 @@ function buildOutputItems(options: BuildOutputOptions): OutputItem[] {
         : JSON.stringify(toolCall.arguments);
 
       // Use pre-generated call_id if available, otherwise generate new one
-      const callId = 'call_id' in toolCall ? (toolCall as ToolCallForPersistence).call_id : generateCallId(toolCall.name);
+      const callId = 'call_id' in toolCall
+        ? (toolCall as ToolCallForPersistence).call_id
+        : generateCallId(toolCall.name, true);
 
       output.push({
         type: 'function_call',
-        id: generateFunctionCallId(),
+        // Same value for id and call_id: some clients echo item.id as the next call_id.
+        id: callId,
         call_id: callId,
         status: 'completed',
         name: toolCall.name,
@@ -188,7 +190,7 @@ export async function handleRequest(
           emitter?.emitOutputTextDelta(itemId, 0, 0, text);
         },
         emitToolCall(callId, tc) {
-          emitter?.emitFunctionCallEvents(id, callId, tc.name, JSON.stringify(tc.arguments), nextOutputIndex++);
+          emitter?.emitFunctionCallEvents(callId, callId, tc.name, JSON.stringify(tc.arguments), nextOutputIndex++);
         },
       },
       extractClientToolNames(request.tools),

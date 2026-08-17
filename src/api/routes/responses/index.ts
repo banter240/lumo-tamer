@@ -7,7 +7,7 @@ import { buildInstructions } from '../../instructions.js';
 import { getConversationsConfig, getServerInstructionsConfig, getServerConfig } from '../../../app/config.js';
 import { isModelAllowed, normalizeModelId, isValidReasoningEffort } from '../../../lumo-client/model-tier.js';
 import { getMetrics } from '../../../app/metrics.js';
-import { trackCustomToolCompletion } from '../../tools/call-id.js';
+import { flattenClientToolItems, trackCustomToolCompletion } from '../../tools/call-id.js';
 import { sendInvalidRequest, sendServerError } from '../../error-handler.js';
 import { deterministicUUID } from '../../../app/id-generator.js';
 
@@ -88,10 +88,19 @@ export function createResponsesRouter(deps: EndpointDependencies): Router {
       if (request.input === undefined || request.input === null) {
         return sendInvalidRequest(res, 'input is required (string or message array)', 'input', 'missing_input');
       }
+      // Text-extracted tool calls use synthetic call_ids. OpenCode echoes them
+      // as function_call_output; Lumo never issued those IDs (400 + retry loop).
+      // Flatten before validation so a follow-up that is only tool output
+      // still counts as a user message.
       if (Array.isArray(request.input)) {
-        const hasUserMessage = request.input.some((m) =>
-          typeof m === 'object' && 'role' in m && m.role === 'user'
-        );
+        request.input = flattenClientToolItems(request.input);
+      }
+      if (Array.isArray(request.input)) {
+        const hasUserMessage = request.input.some((m) => {
+          if (typeof m !== 'object' || m === null) return false;
+          const obj = m as { role?: string; type?: string };
+          return obj.role === 'user' || obj.role === 'tool' || obj.type === 'function_call_output';
+        });
         if (!hasUserMessage) {
           return sendInvalidRequest(res, 'input array must include at least one user message', 'input', 'missing_user_message');
         }
@@ -120,7 +129,7 @@ export function createResponsesRouter(deps: EndpointDependencies): Router {
 
       // ===== STEP 3: Convert input to turns =====
       // Handles normal messages, function_call, and function_call_output items.
-      const turns = convertOpenAIResponseMessages(request.input, request.instructions);
+      const turns = await convertOpenAIResponseMessages(request.input, request.instructions);
 
       // ===== Build instructions (injected in LumoClient, not persisted) =====
       const instructions = buildInstructions(request.tools, request.instructions);

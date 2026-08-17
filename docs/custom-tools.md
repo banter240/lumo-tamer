@@ -35,6 +35,8 @@ This requires trial and error. Experiment with `server.instructions` settings to
 
 3. lumo-tamer intercepts Lumo's responses, detects tool calls, and returns them in OpenAI format for your client to execute.
 
+Client tool calls are not native Lumo tools. Whatever `call_id` the client echoes (`toolname__synth__…`, `call_…`, `fc-…`), the result is rewritten to a user message (`[Tool Result: name]` plus the output) before it goes to Proton. Sending the OpenAI tool protocol through would 400.
+
 ---
 
 ---
@@ -143,6 +145,10 @@ server:
 **Lumo says "I don't have access to that tool"**
 - This is a misrouted call being bounced - should resolve automatically
 - If persistent, check logs for bounce failures
+
+**OpenCode / Responses API: 400 loop after a tool call**
+- Custom tools are detected from text, so the `call_id` is invented by lumo-tamer
+- Results are flattened to user text (see above). If you still see 400s, check the log for the Proton error body, not just the client retry.
 
 ---
 

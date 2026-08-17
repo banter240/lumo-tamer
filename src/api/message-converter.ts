@@ -7,7 +7,12 @@
 
 import type { OpenAIChatMessage, OpenAIResponseMessage, OpenAIToolCall } from './types.js';
 import { Role } from '../lumo-client/index.js';
-import { addToolNameToFunctionOutput } from './tools/call-id.js';
+import {
+  addToolNameToFunctionOutput,
+  formatClientToolCall,
+  formatSyntheticToolResult,
+  resolveClientToolName,
+} from './tools/call-id.js';
 import { type MessageForStore } from 'src/conversations/types.js';
 
 /**
@@ -61,72 +66,40 @@ export function convertToolMessage(item: unknown): MessageForStore | MessageForS
   if (typeof item !== 'object' || item === null) return null;
   const obj = item as Record<string, unknown>;
 
-  // Chat Completions: role: 'tool' -> user with fenced JSON
+  // Chat Completions: role: 'tool' -> user text (never a Lumo tool-result role)
   if (obj.role === 'tool' && 'tool_call_id' in obj) {
-    const json = JSON.stringify({
-      type: 'function_call_output',
-      call_id: obj.tool_call_id,
-      output: obj.content,
-    });
-    return {
-      role: Role.User,
-      content: '```json\n' + json + '\n```',
-      id: obj.tool_call_id as string,
-    };
+    const callId = String(obj.tool_call_id);
+    const name = resolveClientToolName(callId, typeof obj.name === 'string' ? obj.name : undefined);
+    const output = typeof obj.content === 'string' ? obj.content : JSON.stringify(obj.content ?? '');
+    return { role: Role.User, content: formatSyntheticToolResult(name, output), id: callId };
   }
 
-  // Chat Completions: assistant with tool_calls -> array of assistant messages with JSON
+  // Chat Completions: assistant with tool_calls -> short text, no fake call_id
   if (obj.role === 'assistant' && 'tool_calls' in obj && Array.isArray(obj.tool_calls)) {
     const toolCalls = obj.tool_calls as OpenAIToolCall[];
-    return toolCalls.map(tc => {
-      // Normalize arguments: parse then re-stringify for consistent formatting
-      const args = typeof tc.function.arguments === 'string'
-        ? JSON.stringify(JSON.parse(tc.function.arguments))
-        : JSON.stringify(tc.function.arguments ?? {});
-      return {
-        role: Role.Assistant,
-        content: JSON.stringify({
-          type: 'function_call',
-          call_id: tc.id,
-          name: tc.function.name,
-          arguments: args,
-        }),
-        id: tc.id,
-      };
-    });
+    if (toolCalls.length === 0) return [];
+    const text = [
+      typeof obj.content === 'string' ? obj.content : '',
+      ...toolCalls.map((tc) => formatClientToolCall(resolveClientToolName(tc.id, tc.function?.name))),
+    ].filter(Boolean).join('\n');
+    return { role: Role.Assistant, content: text };
   }
 
-  // Responses API: function_call -> assistant with JSON
+  // Responses API: function_call -> short assistant text
   if (obj.type === 'function_call') {
-    // Normalize arguments: parse then re-stringify for consistent formatting
-    // This ensures {"a": 1} and {"a":1} produce the same hash
-    const args = typeof obj.arguments === 'string'
-      ? JSON.stringify(JSON.parse(obj.arguments))
-      : JSON.stringify(obj.arguments ?? {});
-    return {
-      role: Role.Assistant,
-      content: JSON.stringify({
-        type: 'function_call',
-        call_id: obj.call_id,
-        name: obj.name,
-        arguments: args,
-      }),
-      id: obj.call_id as string,
-    };
+    const name = resolveClientToolName(
+      typeof obj.call_id === 'string' ? obj.call_id : undefined,
+      typeof obj.name === 'string' ? obj.name : undefined,
+    );
+    return { role: Role.Assistant, content: formatClientToolCall(name) };
   }
 
-  // Responses API: function_call_output -> user with fenced JSON
+  // Responses API: function_call_output -> user text
   if (obj.type === 'function_call_output') {
-    const json = JSON.stringify({
-      type: 'function_call_output',
-      call_id: obj.call_id,
-      output: obj.output,
-    });
-    return {
-      role: Role.User,
-      content: '```json\n' + json + '\n```',
-      id: obj.call_id as string,
-    };
+    const callId = String(obj.call_id ?? '');
+    const name = resolveClientToolName(callId, typeof obj.name === 'string' ? obj.name : undefined);
+    const output = typeof obj.output === 'string' ? obj.output : JSON.stringify(obj.output ?? '');
+    return { role: Role.User, content: formatSyntheticToolResult(name, output), id: callId };
   }
 
   return null;
@@ -157,7 +130,7 @@ export function extractSystemMessage(messages: OpenAIChatMessage[]): string | un
  *
  * Preserves semantic IDs (call_id) for tool messages to enable deduplication.
  */
-export function convertOpenAIChatMessages(messages: OpenAIChatMessage[]): MessageForStore[] {
+export async function convertOpenAIChatMessages(messages: OpenAIChatMessage[]): Promise<MessageForStore[]> {
   const result: MessageForStore[] = [];
 
   for (const msg of messages) {
@@ -180,10 +153,9 @@ export function convertOpenAIChatMessages(messages: OpenAIChatMessage[]): Messag
       continue;
     }
 
-    // Regular user/assistant message
     result.push({
       role: msg.role === 'user' ? Role.User : Role.Assistant,
-      content: extractTextContent(msg.content),
+      content: extractTextContent('content' in msg ? msg.content : undefined),
     });
   }
 
@@ -196,10 +168,10 @@ export function convertOpenAIChatMessages(messages: OpenAIChatMessage[]): Messag
  * Handles both string input and message array input.
  * Preserves semantic IDs for tool messages to enable deduplication.
  */
-export function convertOpenAIResponseMessages(
+export async function convertOpenAIResponseMessages(
   input: string | OpenAIResponseMessage[] | undefined,
   requestInstructions?: string
-): MessageForStore[] {
+): Promise<MessageForStore[]> {
   if (!input) {
     return [];
   }
@@ -218,10 +190,10 @@ export function convertOpenAIResponseMessages(
     if (typeof item !== 'object') continue;
     const itemType = 'type' in item ? (item as { type: string }).type : undefined;
     if (itemType === 'function_call') {
-      const fc = item as unknown as { name: string; arguments: string };
+      const fc = item as unknown as { name: string; arguments: string; call_id?: string };
       chatMessages.push({
         role: 'assistant',
-        content: JSON.stringify({ name: fc.name, arguments: JSON.parse(fc.arguments || '{}') }),
+        content: formatClientToolCall(resolveClientToolName(fc.call_id, fc.name)),
       });
       continue;
     }
@@ -235,7 +207,7 @@ export function convertOpenAIResponseMessages(
       const obj = item as { role: string; content: unknown };
       chatMessages.push({
         role: obj.role as 'user' | 'assistant' | 'system',
-        content: extractTextContent(obj.content),
+        content: obj.content as string,
       });
     }
   }

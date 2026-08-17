@@ -10,7 +10,7 @@ import { getMetrics } from '../../../app/metrics.js';
 import { ChatCompletionEventEmitter } from './events.js';
 import type { Turn } from '../../../lumo-client/index.js';
 import type { ConversationId } from '../../../conversations/types.js';
-import { trackCustomToolCompletion } from '../../tools/call-id.js';
+import { flattenClientToolItems, trackCustomToolCompletion } from '../../tools/call-id.js';
 import { createStreamingToolProcessor } from '../../tools/streaming-processor.js';
 import { extractClientToolNames } from '../../tools/prefix.js';
 import {
@@ -76,8 +76,12 @@ export function createChatCompletionsRouter(deps: EndpointDependencies): Router 
         return sendInvalidRequest(res, 'messages must be a non-empty array', 'messages', 'missing_messages');
       }
 
+      request.messages = flattenClientToolItems(request.messages);
+
       // Get the last user message
-      const lastUserMessage = [...request.messages].reverse().find(m => m.role === 'user');
+      const lastUserMessage = [...request.messages].reverse().find(m =>
+        m.role === 'user' || m.role === 'tool' || (m as { type?: string }).type === 'function_call_output'
+      );
       if (!lastUserMessage) {
         return sendInvalidRequest(res, 'At least one user message is required', 'messages', 'missing_user_message');
       }
@@ -124,7 +128,7 @@ export function createChatCompletionsRouter(deps: EndpointDependencies): Router 
       }
 
       // ===== Convert messages to Lumo turns =====
-      const turns = convertOpenAIChatMessages(request.messages);
+      const turns = await convertOpenAIChatMessages(request.messages);
 
       // ===== Build instructions (injected in LumoClient, not persisted) =====
       const systemContent = extractSystemMessage(request.messages);
