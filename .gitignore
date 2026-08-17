@@ -9,3 +9,9 @@ secrets/
 browser-data/
 coverage/
 *.pid
+
+# AI Workspace (private, via ai-core)
+dev
+AGENTS.md
+GEMINI.md
+GROK.md
