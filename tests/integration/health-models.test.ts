@@ -23,6 +23,7 @@ describe('GET /health', () => {
     const body = await res.json();
     expect(body.status).toBe('ok');
     expect(body.queue).toEqual({ size: 0, pending: 0 });
+    expect(body.auth).toEqual({ available: false });
   });
 });
 

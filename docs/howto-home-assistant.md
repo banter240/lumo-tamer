@@ -98,7 +98,7 @@ docker compose up -d tamer
 #### Step 5: Verify
 
 ```bash
-curl http://localhost:3003/health # Should return: {"status":"ok"}
+curl http://localhost:3003/health # Should include "status":"ok"
 docker compose logs -f tamer
 ```
 
