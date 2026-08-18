@@ -4,11 +4,12 @@ auth:
   # - browser: token extraction via browser
   # - rclone: paste rclone config
   # See docs/authentication.md
-  method: "login"
+  method: "browser"
 
   # Encrypted vault for secure token storage (AES-256-GCM)
   # Key is stored in OS keychain (desktop) or Docker secret (containers)
   vault:
+    # Relative to LUMO_HOME / --home (defaults to the install directory)
     path: "sessions/vault.enc"
     keychain:
       service: "lumo-tamer"
@@ -29,7 +30,12 @@ auth:
 
   # Browser-specific config (only used when method: browser)
   browser:
-    # Chrome DevTools Protocol endpoint for remote browser
+    # Open a window, wait for you to log in, extract tokens, close the window.
+    # Uses your installed Chrome/Edge when possible so no extra browser image.
+    launch: true
+    # Persistent profile for the launched window (cookies only, not a browser install)
+    userDataDir: "sessions/browser-profile"
+    # Chrome DevTools Protocol endpoint when launch: false (Docker / already-running Chrome)
     cdpEndpoint: "http://localhost:9222"
     # use this if you're running both app and browser docker containers:
     # cdpEndpoint: "http://browser:9222"
@@ -47,7 +53,7 @@ test:
   mock:
     # Enable mock mode: bypass authentication, return simulated Lumo responses
     enabled: false
-    # Scenario: success, error, timeout, rejected, toolCall, misroutedToolCall, weeklyLimit, cycle
+    # Scenario: success, error, timeout, rejected, toolCall, misroutedToolCall, historyToolEcho, weeklyLimit, cycle
     scenario: "success"
 
 # Shared Logging Configuration (can be overridden in server/cli sections)
@@ -60,13 +66,15 @@ log:
   filePath: "lumo-tamer.log"
   # Log user/assistant message content (disabled by default to preserve privacy)
   messageContent: false
+  # If set, append one JSON line per Proton API call (no auth headers). Empty = off.
+  dumpApiPath: ""
 
 # Shared Conversations Configuration (can be overridden in server/cli sections)
 # Note: In-memory conversation storage is always active regardless of sync settings
 # - do they still work/make sense with upstream store?
 # - can they still be overwritten for cli/server? (ie. overwriting dbpath doesn't make sense if sync enabled, does it otherwise?)
 conversations:
-  # Path for IndexedDB SQLite files (used when useUpstreamStorage is true)
+  # Path for IndexedDB SQLite files (used when useFallbackStore is false)
   databasePath: "sessions/"
 
   # WORKAROUND for clients without conversation_id support (e.g., Home Assistant).
@@ -76,11 +84,11 @@ conversations:
   deriveIdFromUser: false
 
   # Use fallback in-memory store instead of the primary store
-  # When true, uses the legacy in-memory store (will be removed in future).
-  # When false (default), uses the primary Redux + IndexedDB store.
+  # When true (the default), uses the in-memory store.
+  # When false, uses the primary Redux + IndexedDB store.
   useFallbackStore: true
 
-  # Enable syncing conversations to Proton servers (requires browser auth)
+  # Enable syncing conversations to Proton servers (browser auth, or login that got Lumo scope)
   enableSync: false
   # Project name for conversations (created if doesn't exist)
   projectName: lumo-tamer
@@ -116,10 +124,21 @@ server:
     - "lumo-lite"
     - "lumo-max"
 
+  # Extra names advertised on /v1/models. Each one maps to a real Lumo tier
+  # and optional thinking. Request reasoning_effort still wins when set.
+  # extraModels:
+  #   - id: lumo-lite-thinking
+  #     model: lumo-lite
+  #     reasoning: high
+  #   - id: lumo-max-reasoning
+  #     model: lumo-max
+  #     reasoning: high
+  extraModels: []
+
   # Thinking / reasoning mode (Lumo 2.0).
   reasoning:
-    # Used when the client does not send reasoning_effort. "none" or "high".
-    # (Inbound reasoning_effort low/medium/high all map to high.)
+    # Used when the client omits reasoning_effort. none = compact/fast (ZeroTricks).
+    # high = think. lumo-max still thinks when effort is omitted.
     default: "none"
     # Forward Lumo's thinking tokens to the client as delta.reasoning_content
     # (streaming) or message.reasoning_content (non-streaming).
@@ -129,7 +148,8 @@ server:
   # Increase if clients send larger tool/context payloads, but be aware:
   # 360kb (for a typical request, containing mainly ASCII characters)
   # translates to roughly 22.5K tokens, which is Lumo's "warning level" on context size.
-  bodyLimit: "360kb"
+  # Coding clients (OpenCode, etc.) send large contexts. 1mb ≈ ~60k tokens of ASCII.
+  bodyLimit: "1mb"
 
   # Prometheus metrics endpoint
   metrics:
@@ -140,14 +160,21 @@ server:
     # Prefix for all metric names
     prefix: "lumo_"
 
-  # Enable Lumo's native web_search tool (and other external tools: weather, stock, cryptocurrency)
+  # Native web_search (and weather, stock, cryptocurrency). Off: Lumo should
+  # not hit the open web unless you ask. On if you want the website extras
+  # (and accept more native/custom tool mix-ups).
   enableWebSearch: false
 
-  # Custom tool detection for API clients
-  # Enable detection of JSON tool calls in Lumo's responses
-  # WARNING: When enabled, Lumo can trigger actions via API clients!
+  # Native generate/edit/describe image. Off: replies become huge data URLs
+  # and Lumo may draw when you asked it to control a light.
+  enableImageTools: false
+  images:
+    maxInputBytes: "4mb"
+
+  # Honor tools[] from the client (OpenCode, HA, …). Off = ignore client tools.
+  # WARNING: When on, Lumo can trigger actions via those clients.
   customTools:
-    enabled: false
+    enabled: true
 
     # Prefix added to custom tool names to distinguish from Lumo's native tools.
     # Applied to tool definitions sent to Lumo, stripped from tool calls returned to client.
@@ -177,7 +204,7 @@ server:
       {{/if}}
 
       {{#if tools}}
-      Below are all the custom tools you can use. Remember, all tools prefixed with `{{prefix}}` are custom tools and must be called by outputting the JSON to the user.
+      Below are all the custom tools you can use. Remember, all tools prefixed with `{{prefix}}` are custom tools and must be called by outputting the JSON to the user. Copy each "name" exactly as listed, including `{{prefix}}`. Do not shorten or invent names.
 
       {{tools}}
       {{/if}}
@@ -190,12 +217,15 @@ server:
         replacement: "custom "
 
 
-    # Fallback instructions when no system/developer message is provided in the request
+    # Fallback when the client sends no system prompt (Home Assistant voice, etc.).
+    # Keep this spoken-friendly: Assist reads the reply aloud.
     fallback: |
       Always answer in plain text. Don't use tables, quote blocks, lists, etc. Be concise.
 
     # Instructions prepended when tools are provided in the request.
     # Can use {{prefix}} variable.
+    # Shared by HA Assist tools and coding agents. Keep HA-specific nesting
+    # examples in your own config.yaml, not here.
     forTools: |
       === CUSTOM TOOL PROTOCOL ===
       The tools below are CUSTOM tools, prefixed with `{{prefix}}`.
@@ -205,19 +235,46 @@ server:
       ```json
       {"name": "{{prefix}}example_tool", "arguments": {"param": "value"}}
       ```
+      example_tool is only the shape. Never call that name.
+      Copy "name" exactly from the tool list below, including `{{prefix}}`.
+      Do not shorten, rename, or invent names.
+      Put every parameter inside "arguments" and match that tool's schema
+      (arrays are JSON arrays [...], objects are {...}). One object per call.
+
       DO NOT try to call custom tools through your internal tool mechanism, it will fail with error:true. If you receive such an error, don't try again with different arguments, but output the JSON as text to the user.
       DO NOT remove the `{{prefix}}` prefix when calling these tools.
 
       The user's system will execute them and return results.
       === END PROTOCOL ===
 
+    # Follow-up turns: same rules, shorter. Tool schemas are still sent in full.
+    forToolsCompact: |
+      Custom tools: JSON in a ```json code block. Copy "name" exactly from the list
+      below (keep `{{prefix}}`). Do not shorten names. Parameters go in "arguments";
+      arrays stay arrays. One object per call.
 
-    # Where to inject instructions: "first" or "last" user message to Lumo
-    # - first: inject once into first user message (may reduce token usage in multi-turn conversations,
-    #   but Lumo may "forget" instructions in long conversations)
-    # - last: inject into last user message each request (matches WebClient behaviour, might use more tokens, but instructions always fresh)
+
+    # Where to inject instructions when the request has no client tools.
+    # With tools the proxy always uses "last" so long sessions do not drop the protocol.
+    # - first: inject once into first user message (fewer tokens, may be forgotten)
+    # - last: inject into last user message each request (WebClient behaviour, more tokens)
     injectInto: "first"
 
+
+    # Injected when the client sends response_format json_object / json_schema.
+    # {{schema}} is the JSON Schema or "a JSON object".
+    forJsonFormat: |
+      Respond ONLY with valid JSON matching this schema. No markdown, no code fences, no explanation, no extra keys.
+      Schema:
+      {{schema}}
+
+    # tool_choice: required
+    forToolRequired: |
+      You MUST call at least one custom tool before answering. Do not reply with only text.
+
+    # tool_choice: { type: function, function: { name } }
+    forToolNamed: |
+      You MUST call the custom tool `{{name}}` in this turn. Do not call other tools.
 
     # Bounce instruction sent when Lumo routes a custom tool through its native tool pipeline.
     # The actual tool call JSON is appended at runtime.
@@ -233,8 +290,10 @@ cli:
     target: "file"
     filePath: "lumo-tamer-cli.log"
 
-  # Enable Lumo's native web_search tool (and other external tools: weather, stock, cryptocurrency)
   enableWebSearch: false
+  enableImageTools: false
+  images:
+    maxInputBytes: "4mb"
 
   # Local actions: code block detection and execution
   localActions:
@@ -248,7 +307,7 @@ cli:
       # Note that if this is false, Lumo can still ask to read a file using shell tools (ie. cat)
       enabled: true
       # Max file size. Reading files larger than this fail with an error.
-      # 512kb translates to roughly 32K tokens (Lumo's "warning level" on context size).
+      # 360kb translates to roughly 22.5K tokens (Lumo's "warning level" on context size).
       maxFileSize: "360kb"
 
     # Executors for code block execution

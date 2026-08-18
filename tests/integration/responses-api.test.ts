@@ -76,6 +76,32 @@ describe('/v1/responses', () => {
       expect(body.status).toBe('completed');
     });
 
+    it('accepts a follow-up that is only a synthetic function_call_output', async () => {
+      const res = await postResponses(ts, {
+        input: [
+          { type: 'function_call_output', call_id: 'read__synth__0123456789abcdef01234567', output: 'file body' },
+        ],
+        stream: false,
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.status).toBe('completed');
+    });
+
+    it('accepts a follow-up that is only an OpenCode-style call_ id', async () => {
+      const res = await postResponses(ts, {
+        input: [
+          { type: 'function_call_output', call_id: 'call_abc123', name: 'read', output: 'file body' },
+        ],
+        stream: false,
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.status).toBe('completed');
+    });
+
     it('returns OpenAI-style 400 for missing input', async () => {
       const res = await postResponses(ts, { stream: false });
 

@@ -11,6 +11,7 @@ import {
   applyToolPrefix,
   stripToolPrefix,
   applyToolNamePrefix,
+  extractClientToolNames,
 } from '../../src/api/tools/prefix.js';
 import type { OpenAITool } from '../../src/api/types.js';
 
@@ -201,6 +202,28 @@ describe('applyToolNamePrefix', () => {
     const result = applyToolNamePrefix(text, ['find_files'], 'ns:v1:');
 
     expect(result).toBe('Use ns:v1:find_files tool.');
+  });
+});
+
+describe('extractClientToolNames', () => {
+  it('reads nested function.name', () => {
+    const tools: OpenAITool[] = [
+      { type: 'function', function: { name: 'read', description: 'Read', parameters: {} } },
+      { type: 'function', function: { name: 'write', description: 'Write', parameters: {} } },
+    ];
+    expect(extractClientToolNames(tools)).toEqual(['read', 'write']);
+  });
+
+  it('reads flat Home Assistant name', () => {
+    const tools = [
+      { type: 'function', name: 'HassTurnOn' },
+    ] as unknown as OpenAITool[];
+    expect(extractClientToolNames(tools)).toEqual(['HassTurnOn']);
+  });
+
+  it('returns empty for missing tools', () => {
+    expect(extractClientToolNames(undefined)).toEqual([]);
+    expect(extractClientToolNames([])).toEqual([]);
   });
 });
 

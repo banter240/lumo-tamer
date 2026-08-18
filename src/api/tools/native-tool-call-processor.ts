@@ -20,7 +20,8 @@ import { logger } from '../../app/logger.js';
 import type { ParsedToolCall } from './types.js';
 
 const KNOWN_NATIVE_TOOLS = new Set([
-  'proton_info', 'web_search', 'weather', 'stock', 'cryptocurrency'
+  'proton_info', 'web_search', 'weather', 'stock', 'cryptocurrency',
+  'generate_image', 'describe_image', 'edit_image',
 ]);
 
 // ── Internal helpers ─────────────────────────────────────────────────
@@ -95,8 +96,8 @@ export class NativeToolCallProcessor {
   private _misrouted = false;
 
   constructor(
-    /** When true, ignore misrouted detection (for bounce responses) */
-    private isBounce = false
+    /** When true, do not abort on a misrouted tool (title / bounce completions). */
+    private suppressBounce = false
   ) {}
 
   /** Feed tool_call SSE content. Returns true if should abort early. */
@@ -115,12 +116,10 @@ export class NativeToolCallProcessor {
         getMetrics()?.toolCallsTotal.inc({
           type: 'custom', status: 'misrouted', tool_name: strippedName
         });
-        logger.debug({ tool: toolCall.name, isBounce: this.isBounce }, 'Misrouted tool call detected');
+        logger.info({ tool: toolCall.name, suppressBounce: this.suppressBounce, args: toolCall.arguments }, '[tools] Lumo used native pipeline (misrouted)');
 
-        // Only abort on first misroute in non-bounce mode.
-        // Note: This means we may undercount if Lumo queues multiple misrouted calls
-        // in one response. The bounce response will count any subsequent retries.
-        if (!this.isBounce && toolCall === this.firstToolCall) {
+        // Only abort on first misroute when bounce handling is enabled.
+        if (!this.suppressBounce && toolCall === this.firstToolCall) {
           this._misrouted = true;
           return true;
         }
@@ -129,7 +128,7 @@ export class NativeToolCallProcessor {
         getMetrics()?.toolCallsTotal.inc({
           type: 'native', status: 'detected', tool_name: toolCall.name
         });
-        logger.debug({ raw: json }, 'Native SSE tool_call');
+        logger.info({ raw: json }, '[tools] Lumo native SSE tool_call');
       }
     }
     return false;

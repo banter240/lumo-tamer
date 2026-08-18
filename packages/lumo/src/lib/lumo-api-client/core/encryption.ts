@@ -10,7 +10,13 @@ export const DEFAULT_LUMO_PUB_KEY = LUMO_GPG_PUB_KEY;
 export { decryptString, decryptUint8Array, encryptString };
 
 export function base64StringToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
-    const binaryString = atob(base64);
+    // Strip Data-URL prefix (e.g., data:image/png;base64,) and whitespace
+    let cleanBase64 = base64.trim();
+    const commaIndex = cleanBase64.indexOf(',');
+    if (commaIndex !== -1) {
+        cleanBase64 = cleanBase64.substring(commaIndex + 1);
+    }
+    const binaryString = atob(cleanBase64);
     const bytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
         bytes[i] = binaryString.charCodeAt(i);
@@ -57,10 +63,7 @@ export async function encryptTurns(turns: Turn[], encryption: RequestEncryptionP
  */
 async function encryptImage(image: WireImage, encryption: RequestEncryptionParams) {
     const data = base64StringToUint8Array(image.data);
-    console.log('image.data (truncated):', image.data.slice(0, 128));
-    console.log('decoded data (truncated):', data.slice(0, 128));
     const encryptedData = await encryption.encryptUint8Array(data);
-    console.log('encryptedData (truncated):', encryptedData.slice(0, 128));
     return {
         ...image,
         data: encryptedData,

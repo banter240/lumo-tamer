@@ -64,6 +64,32 @@ describe('V2StreamProcessor', () => {
         expect(run(line)).toContainEqual({ type: 'harmful' });
     });
 
+    it('does not process a delta after content_filter', () => {
+        const line = `data:${JSON.stringify({
+            choices: [{ delta: { content: 'blocked' }, finish_reason: 'content_filter' }],
+        })}\n`;
+        const msgs = run(line);
+        expect(msgs).toContainEqual({ type: 'harmful' });
+        expect(msgs.some((m) => m.type === 'token_data')).toBe(false);
+    });
+
+    it('does not emit usage from a chunk that already has an error', () => {
+        const line = `data:${JSON.stringify({
+            error: { message: 'nope' },
+            usage: { completion_tokens: 1 },
+            choices: [{ delta: { content: 'x' } }],
+        })}\n`;
+        expect(run(line)).toEqual([{ type: 'error', message: 'nope' }]);
+    });
+
+    it('copies usage instead of mutating the parsed object', () => {
+        const usage = { completion_tokens: 3 };
+        const line = `data:${JSON.stringify({ model: 'lumo-max', choices: [], usage })}\n`;
+        const msgs = run(line);
+        expect(msgs).toContainEqual({ type: 'usage', usage: { completion_tokens: 3, model: 'lumo-max' } });
+        expect(usage).toEqual({ completion_tokens: 3 });
+    });
+
     it('surfaces top-level errors', () => {
         const line = `data:${JSON.stringify({ error: { code: 'CONTEXT_LENGTH_EXCEEDED', message: 'too long' } })}\n`;
         expect(run(line)).toContainEqual({ type: 'error', message: 'too long' });
@@ -113,8 +139,17 @@ describe('V2StreamProcessor', () => {
         expect(fin).toContainEqual({ type: 'token_data', target: 'tool_call', content: JSON.stringify({ name: 'web_search', arguments: { q: 'x' } }) });
     });
 
-    it('ignores image_data objects', () => {
-        const line = `data:${JSON.stringify({ object: 'lumo.image_data', image: { id: 'i', data: 'x' } })}\n`;
-        expect(run(line)).toEqual([]);
+    it('surfaces lumo.image_data objects', () => {
+        const line = `data:${JSON.stringify({ object: 'lumo.image_data', image: { id: 'i', data: 'x', is_final: true } })}\n`;
+        expect(run(line)).toEqual([
+            { type: 'image_data', image_id: 'i', data: 'x', is_final: true, encrypted: false },
+        ]);
+    });
+
+    it('surfaces flat image_data fields', () => {
+        const line = `data:${JSON.stringify({ object: 'lumo.image_data', image_id: 'img1', data: 'abc', encrypted: true })}\n`;
+        expect(run(line)).toEqual([
+            { type: 'image_data', image_id: 'img1', data: 'abc', encrypted: true },
+        ]);
     });
 });

@@ -81,6 +81,29 @@ describe('/v1/chat/completions', () => {
       expect(body.error.param).toBe('messages');
       expect(body.error.code).toBe('missing_user_message');
     });
+
+    it('returns 400 for an unsupported response_format', async () => {
+      const res = await postChat(ts, {
+        model: 'lumo',
+        messages: userMessage('Hello'),
+        response_format: { type: 'xml' },
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error.code).toBe('invalid_response_format');
+    });
+
+    it('accepts json_schema and still returns a completion', async () => {
+      const res = await postChat(ts, {
+        model: 'lumo',
+        messages: userMessage('Hello'),
+        response_format: {
+          type: 'json_schema',
+          json_schema: { name: 'ping', schema: { type: 'object' } },
+        },
+      });
+      expect(res.status).toBe(200);
+    });
   });
 
   describe('streaming', () => {
@@ -199,6 +222,44 @@ describe('/v1/chat/completions', () => {
         .map(e => (e.data as any).choices[0].delta.content);
       const fullContent = contentDeltas.join('');
       expect(fullContent).not.toContain("don't have access");
+    });
+  });
+
+  describe('historyToolEcho scenario', () => {
+    let echoTs: TestServer;
+    const readTool = [{
+      type: 'function',
+      function: {
+        name: 'read',
+        parameters: { type: 'object', properties: { filePath: { type: 'string' } } },
+      },
+    }];
+
+    beforeAll(async () => {
+      echoTs = await createTestServer('historyToolEcho');
+      (getCustomToolsConfig() as any).enabled = true;
+    });
+    afterAll(async () => {
+      (getCustomToolsConfig() as any).enabled = false;
+      await echoTs.close();
+    });
+
+    it('non-streaming: Done read plus args JSON becomes a read tool call', async () => {
+      const res = await postChat(echoTs, {
+        model: 'lumo',
+        messages: userMessage('read the coordinator'),
+        stream: false,
+        tools: readTool,
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      const choice = body.choices[0];
+      expect(choice.finish_reason).toBe('tool_calls');
+      expect(choice.message.tool_calls?.[0]?.function?.name).toBe('read');
+      const args = JSON.parse(choice.message.tool_calls[0].function.arguments);
+      expect(args).toEqual({ filePath: '/tmp/coordinator.py', offset: 770, limit: 50 });
+      expect(choice.message.content ?? '').not.toContain('Done read');
     });
   });
 });

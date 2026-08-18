@@ -6,7 +6,7 @@
  * detects native tool calls, and bounces misrouted custom tools.
  */
 
-import { decryptString } from '@lumo/crypto/index.js';
+import { decryptString, decryptUint8Array } from '@lumo/crypto/index.js';
 import {
     DEFAULT_LUMO_PUB_KEY,
     encryptTurns,
@@ -16,6 +16,7 @@ import {
     generateRequestKey,
     RequestEncryptionParams,
 } from '@lumo/lib/lumo-api-client/core/encryptionParams.js';
+import { randomUUID } from 'crypto';
 import { logger } from '../app/logger.js';
 import {
     Role,
@@ -33,7 +34,14 @@ import {
 } from './types.js';
 import { buildChatCompletionsBody, LUMO_CHAT_ENDPOINT, type LumoCompletionTarget } from './v2-body.js';
 import { V2StreamProcessor } from './v2-stream.js';
-import { getInstructionsConfig, getLogConfig, getConfigMode, getCustomToolsConfig, getEnableWebSearch } from '../app/config.js';
+import {
+    concatBase64,
+    formatImagesForClient,
+    sniffImageMime,
+    type GeneratedImage,
+} from './images.js';
+import { selectNativeTools } from './native-tools.js';
+import { getInstructionsConfig, getLogConfig, getConfigMode, getCustomToolsConfig, getEnableWebSearch, getEnableImageTools } from '../app/config.js';
 import { injectInstructionsIntoTurns } from './instructions.js';
 import { NativeToolCallProcessor, type NativeToolCallResult } from '../api/tools/native-tool-call-processor.js';
 import { postProcessTitle } from '@lumo/lib/lumo-api-client/utils.js';
@@ -41,8 +49,7 @@ import { postProcessTitle } from '@lumo/lib/lumo-api-client/utils.js';
 // Re-export types for external consumers
 export type { LumoClientOptions, ChatResult };
 
-const DEFAULT_INTERNAL_TOOLS: ToolName[] = ['proton_info'];
-const DEFAULT_EXTERNAL_TOOLS: ToolName[] = ['web_search', 'weather', 'stock', 'cryptocurrency'];
+
 
 /** Encryption context for decrypting a response stream. */
 interface EncryptionContext {
@@ -56,6 +63,7 @@ interface CompletionResult {
     reasoning: string;
     usage?: LumoUsage;
     native: NativeToolCallResult;
+    images: GeneratedImage[];
 }
 
 /** Build the bounce instruction: config text + the misrouted tool call as JSON example.
@@ -105,17 +113,20 @@ export class LumoClient {
         opts: {
             onChunk?: (content: string) => void;
             onReasoning?: (content: string) => void;
-            isBounce: boolean;
+            onImage?: (image: GeneratedImage) => void;
+            suppressBounce: boolean;
         },
     ): Promise<CompletionResult> {
         const reader = stream.getReader();
         const decoder = new TextDecoder('utf-8');
         const processor = new V2StreamProcessor();
-        const nativeToolProcessor = new NativeToolCallProcessor(opts.isBounce);
+        const nativeToolProcessor = new NativeToolCallProcessor(opts.suppressBounce);
 
         let content = '';
         let reasoning = '';
         let usage: LumoUsage | undefined;
+        const pendingImages = new Map<string, string>();
+        const images: GeneratedImage[] = [];
         let suppressChunks = false;
         let abortEarly = false;
         let streamEnded = false;
@@ -133,6 +144,39 @@ export class LumoClient {
                 }
             }
             return text;
+        };
+
+        const decryptImage = async (data: string, encrypted?: boolean): Promise<string | null> => {
+            if (encrypted && encryptionContext) {
+                try {
+                    const bytes = await decryptUint8Array(
+                        data,
+                        encryptionContext.requestKey,
+                        `lumo.response.${encryptionContext.requestId}.chunk`,
+                    );
+                    return Buffer.from(bytes).toString('base64');
+                } catch (error) {
+                    logger.error({ error }, 'Failed to decrypt image chunk; dropping');
+                    return null;
+                }
+            }
+            return data;
+        };
+
+        const finishImage = (imageId: string, data: string) => {
+            if (!data) return;
+            const image: GeneratedImage = {
+                image_id: imageId,
+                mimeType: sniffImageMime(data),
+                data,
+            };
+            images.push(image);
+            const markdown = formatImagesForClient([image]);
+            content += markdown;
+            if (!suppressChunks) {
+                opts.onChunk?.(markdown);
+            }
+            opts.onImage?.(image);
         };
 
         const processMessage = async (msg: ReturnType<V2StreamProcessor['processChunk']>[number]) => {
@@ -182,6 +226,20 @@ export class LumoClient {
                     nativeToolProcessor.feedToolResult(result);
                     break;
                 }
+                case 'image_data': {
+                    if (!msg.data) break;
+                    const data = await decryptImage(msg.data, msg.encrypted);
+                    if (data === null) break;
+                    const imageId = msg.image_id ?? randomUUID();
+                    const prev = pendingImages.get(imageId);
+                    if (msg.is_final === false) {
+                        pendingImages.set(imageId, prev ? concatBase64(prev, data) : data);
+                    } else {
+                        pendingImages.delete(imageId);
+                        finishImage(imageId, prev ? concatBase64(prev, data) : data);
+                    }
+                    break;
+                }
                 case 'usage':
                     usage = msg.usage;
                     break;
@@ -220,7 +278,11 @@ export class LumoClient {
             }
 
             nativeToolProcessor.finalize();
-            return { content, reasoning, usage, native: nativeToolProcessor.getResult() };
+            for (const [imageId, data] of pendingImages) {
+                finishImage(imageId, data);
+            }
+            pendingImages.clear();
+            return { content, reasoning, usage, native: nativeToolProcessor.getResult(), images };
         } finally {
             // Cancel the upstream body if we stopped early (e.g. misrouted-tool abort).
             if (!streamEnded) {
@@ -250,7 +312,8 @@ export class LumoClient {
             target: LumoCompletionTarget;
             onChunk?: (content: string) => void;
             onReasoning?: (content: string) => void;
-            isBounce: boolean;
+            onImage?: (image: GeneratedImage) => void;
+            suppressBounce: boolean;
         },
     ): Promise<CompletionResult> {
         let processedTurns = turns;
@@ -287,7 +350,8 @@ export class LumoClient {
         return this.processStream(stream, encryptionContext, {
             onChunk: params.onChunk,
             onReasoning: params.onReasoning,
-            isBounce: params.isBounce,
+            onImage: params.onImage,
+            suppressBounce: params.suppressBounce,
         });
     }
 
@@ -313,6 +377,7 @@ export class LumoClient {
             modelTier = this.defaultOptions?.modelTier ?? 'auto',
             enableReasoning = this.defaultOptions?.enableReasoning ?? false,
             onReasoning = this.defaultOptions?.onReasoning,
+            onImage = this.defaultOptions?.onImage,
         } = options;
 
         const turn = turns[turns.length - 1];
@@ -326,9 +391,11 @@ export class LumoClient {
         }
 
         // Read from config - applies to both server and CLI modes
-        const tools: ToolName[] = getEnableWebSearch()
-            ? [...DEFAULT_INTERNAL_TOOLS, ...DEFAULT_EXTERNAL_TOOLS]
-            : DEFAULT_INTERNAL_TOOLS;
+        const tools = selectNativeTools({
+            includeInternal: true,
+            webSearch: getEnableWebSearch(),
+            images: getEnableImageTools(),
+        });
 
         // Inject instructions at the last moment (kept out of persisted turns).
         const turnsWithInstructions = instructions
@@ -345,7 +412,7 @@ export class LumoClient {
                 tools: [],
                 enableEncryption,
                 target: 'title',
-                isBounce: true, // no bounce handling for the title request
+                suppressBounce: true,
             }).catch((error) => {
                 logger.warn({ error }, 'Title generation failed');
                 return null;
@@ -361,8 +428,15 @@ export class LumoClient {
             target: 'message',
             onChunk,
             onReasoning,
-            isBounce,
+            onImage,
+            suppressBounce: isBounce,
         });
+
+        logger.debug({
+            usage: main.usage,
+            tier: modelTier,
+            enableReasoning,
+        }, 'Lumo completion usage');
 
         if (logConfig.messageContent) {
             const responsePreview = main.content.length > 200
@@ -410,6 +484,7 @@ export class LumoClient {
             message,
             reasoning: main.reasoning || undefined,
             usage: main.usage,
+            images: main.images.length > 0 ? main.images : undefined,
             title,
             nativeToolCallFailed: main.native.toolCall ? main.native.failed : undefined,
             misrouted: main.native.misrouted,

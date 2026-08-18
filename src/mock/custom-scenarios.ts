@@ -122,4 +122,14 @@ export const customScenarios: Record<string, ScenarioGenerator> = {
 
         yield formatSSEMessage({ type: 'done' });
     },
+
+    // Lumo copies flatten history: "Done read" plus args-only JSON, no {"name"}.
+    historyToolEcho: async function* () {
+        yield formatSSEMessage({ type: 'ingesting', target: 'message' });
+        const text = 'Done read\n{"filePath":"/tmp/coordinator.py","offset":770,"limit":50}';
+        for (let i = 0; i < text.length; i++) {
+            yield formatSSEMessage({ type: 'token_data', target: 'message', count: i, content: text[i] });
+        }
+        yield formatSSEMessage({ type: 'done' });
+    },
 };

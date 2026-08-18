@@ -112,6 +112,51 @@ export class ResponseEventEmitter {
     });
   }
 
+  emitReasoningPartAdded(itemId: string, outputIndex: number, contentIndex: number): void {
+    this.emit({
+      type: 'response.content_part.added',
+      item_id: itemId,
+      output_index: outputIndex,
+      content_index: contentIndex,
+      part: { type: 'reasoning_text', text: '' },
+      sequence_number: this.sequenceNumber++,
+    });
+  }
+
+  emitReasoningTextDelta(itemId: string, outputIndex: number, contentIndex: number, delta: string): void {
+    if (!delta) return;
+    this.emit({
+      type: 'response.reasoning_text.delta',
+      item_id: itemId,
+      output_index: outputIndex,
+      content_index: contentIndex,
+      delta,
+      sequence_number: this.sequenceNumber++,
+    });
+  }
+
+  emitReasoningTextDone(itemId: string, outputIndex: number, contentIndex: number, text: string): void {
+    this.emit({
+      type: 'response.reasoning_text.done',
+      item_id: itemId,
+      output_index: outputIndex,
+      content_index: contentIndex,
+      text,
+      sequence_number: this.sequenceNumber++,
+    });
+  }
+
+  emitReasoningPartDone(itemId: string, outputIndex: number, contentIndex: number, text: string): void {
+    this.emit({
+      type: 'response.content_part.done',
+      item_id: itemId,
+      output_index: outputIndex,
+      content_index: contentIndex,
+      part: { type: 'reasoning_text', text },
+      sequence_number: this.sequenceNumber++,
+    });
+  }
+
   emitOutputItemDone(item: any, outputIndex: number): void {
     this.emit({
       type: 'response.output_item.done',
@@ -184,7 +229,7 @@ export class ResponseEventEmitter {
     this.emit({
       type: 'error',
       code: 'server_error',
-      message: String(error),
+      message: error.message,
       param: null,
       sequence_number: this.sequenceNumber++,
     });

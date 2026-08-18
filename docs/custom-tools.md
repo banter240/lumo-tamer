@@ -6,6 +6,17 @@ For CLI local actions (file operations, code execution), see [local-actions.md](
 
 ---
 
+## How the proxy works
+
+ZeroTricks' contract with Lumo: a custom tool is **text** — one JSON object, preferably in a ` ```json ` fence, name prefixed with `user:`. Bounce is the same: if Lumo uses its native pipeline, ask it to emit that JSON again.
+
+This fork keeps that contract and adds the OpenCode/OpenAI side:
+
+1. **In** — `tools[]`, `tool_calls`, `function_call_output` cannot go to Proton (400). Flatten them: past calls become the same fenced JSON Lumo is told to emit; results become `[Tool Result: name]`.
+2. **Out** — locate a fence or a raw `{ "name":` blob, then extract `{name, arguments}` (strict JSON, jammed objects, then lenient strings). Prefix stripped for the client.
+
+If a call is not executed, the log says `[tools] not executed` and why.
+
 ## Warning
 
 Custom tool support is experimental. Tool calls can fail because of:
@@ -13,7 +24,7 @@ Custom tool support is experimental. Tool calls can fail because of:
 - **Too many tools**: Lumo gets confused when the client provides many tools or (very) long instructions.
 - **Misrouted calls**: Lumo routes custom tools through its native pipeline, which fails server-side. lumo-tamer bounces these back, but this adds latency and isn't always reliable.
 - **Wrong tool/arguments**: Lumo sets the wrong tool name or arguments.
-- **Detection failures**: JSON code blocks are not properly detected or parsed.
+- **Detection failures**: JSON code blocks or mid-line `{"name":…}` objects are not properly detected or parsed. Example JSON that names a tool not in the request is left as text.
 
 This requires trial and error. Experiment with `server.instructions` settings to improve results.
 
@@ -24,20 +35,13 @@ This requires trial and error. Experiment with `server.instructions` settings to
 
 ## Quick Start
 
-1. Enable custom tools in `config.yaml`:
-   ```yaml
-   server:
-     customTools:
-       enabled: true
-   ```
+1. Client `tools[]` are on by default (`customTools.enabled: true`). Turn that off only if you want to ignore client tools.
 
 2. Configure your API client (Home Assistant, Open WebUI, etc.) to use tools as normal.
 
 3. lumo-tamer intercepts Lumo's responses, detects tool calls, and returns them in OpenAI format for your client to execute.
 
----
-
----
+Client tool calls are not native Lumo tools. Whatever `call_id` the client echoes (`toolname__synth__…`, `call_…`, `fc-…`), the result is rewritten to a user message (`[Tool Result: name]` plus the output) before it goes to Proton. Sending the OpenAI tool protocol through would 400.
 
 ## Configuration
 
@@ -46,7 +50,7 @@ This requires trial and error. Experiment with `server.instructions` settings to
 ```yaml
 server:
   customTools:
-    # Enable detection of JSON tool calls in Lumo's responses
+    # Honor tools[] from the client. Default is true.
     enabled: true
 
     # Prefix added to custom tool names to distinguish from Lumo's native tools.
@@ -95,22 +99,33 @@ server:
     # Can use {{prefix}} variable.
     forTools: |
       === CUSTOM TOOL PROTOCOL ===
-      The tools below are CUSTOM tools, prefixed with `{{prefix}}`.
+      Call custom tools (names start with `{{prefix}}`) with ONE raw JSON object
+      on its own line. No markdown fences, no extra text on that line.
 
-      IMPORTANT: Custom tools are NOT part of your built-in tool system.
-      You MUST call them by outputting JSON as text in a code block to the user, like this:
-      ```json
       {"name": "{{prefix}}example_tool", "arguments": {"param": "value"}}
-      ```
-      DO NOT try to call custom tools through your internal tool mechanism, it will fail with error:true.
-      DO NOT remove the `{{prefix}}` prefix when calling these tools.
 
-      The user's system will execute them and return results.
+      Preferred: a ```json fence (ZeroTricks). Also accepted: one raw JSON line.
+      Always keep the prefix. Always nest parameters under "arguments".
+      One object at a time.
       === END PROTOCOL ===
+
+    # Used on follow-up turns (more than one user message after flatten).
+    # Tool schemas are still sent in full. compact only shortens this wrapper.
+    forToolsCompact: |
+      Custom tools: one raw JSON line, no fences.
+      {"name":"{{prefix}}tool","arguments":{"param":"value"}}
+      Prefix and arguments wrapper are required.
+
+    # tool_choice: required / named function (auto is the default; none drops tools)
+    forToolRequired: |
+      You MUST call at least one custom tool before answering. Do not reply with only text.
+    forToolNamed: |
+      You MUST call the custom tool `{{name}}` in this turn. Do not call other tools.
 
     # Bounce instruction sent when Lumo routes a custom tool through its native pipeline.
     forToolBounce: |
-      You tried to call a custom tool using your built-in tool system, but custom tools must be called by outputting JSON text within a code block. Please output the tool call as JSON, like this:
+      You tried to call a custom tool through your built-in tool system. Emit one raw JSON line instead, no fences:
+      {"name": "{{prefix}}tool", "arguments": {"param": "value"}}
 ```
 
 ### Instruction Replace Patterns
@@ -128,13 +143,17 @@ server:
         replacement: "custom "
 ```
 
+`tool_choice` (`auto` / `none` / `required` / named function) is honored via extra instructions. `none` drops `tools[]` from the request.
+
+Follow-up turns use `forToolsCompact` instead of `forTools` (when there is more than one user message after flatten). If you add extra examples to `forTools` (Home Assistant nested `ha_call_*`, HassTurnOn shapes, …), copy the same examples into `forToolsCompact`. Schemas stay in full either way.
 
 ## Troubleshooting
 
 **Tool calls not detected**
 - Ensure `customTools.enabled: true`
-- Check that Lumo is outputting valid JSON in code fences
-- Review `instructions.forTools` - Lumo may need clearer instructions
+- Check that Lumo emits raw JSON on its own line (`{"name":"user:…","arguments":{…}}`)
+- Review `instructions.forTools` if the model still uses fences or flattens arguments
+- The proxy locates a tool blob in the stream, then extracts `{name, arguments}`: strict JSON, jammed objects, then a lenient parse (raw newlines / quotes in strings, trailing fences). If it still fails, the log says `[tools] not executed` with the reason.
 
 **Wrong tool names**
 - Check `customTools.prefix` - it's added to definitions and stripped from responses
@@ -143,6 +162,10 @@ server:
 **Lumo says "I don't have access to that tool"**
 - This is a misrouted call being bounced - should resolve automatically
 - If persistent, check logs for bounce failures
+
+**OpenCode / Responses API: 400 loop after a tool call**
+- Custom tools are detected from text, so the `call_id` is invented by lumo-tamer
+- Results are flattened to user text (see above). If you still see 400s, check the log for the Proton error body, not just the client retry.
 
 ---
 
@@ -157,13 +180,14 @@ Lumo has built-in tools executed server-side by Proton:
 | `weather` | Weather data |
 | `stock` | Stock prices |
 | `cryptocurrency` | Cryptocurrency prices |
+| `generate_image` / `edit_image` / `describe_image` | Native image tools (`enableImageTools`) |
 
-Enable/disable external native tools:
+Web search and image tools stay off until you turn them on:
 
 ```yaml
 server:
-  # Enable Lumo's native web_search tool (and other external tools)
   enableWebSearch: true
+  enableImageTools: true
 ```
 
 Native and custom tools work together: native tools execute server-side, custom tools are detected client-side.
@@ -175,15 +199,13 @@ Native and custom tools work together: native tools execute server-side, custom 
 1. **Tool definitions are prefixed** with `customTools.prefix` (e.g., `get_weather` becomes `user:get_weather`)
 2. **Instructions are assembled** from `instructions.template` with tool definitions as JSON
 3. **Instructions are prepended** to a user message as `[Project instructions: ...]`
-   - `instructions.injectInto: "first"` (default): inject into first user message (less token usage in multi-turn)
-   - `instructions.injectInto: "last"`: inject into last user message each request (matches WebClient)
-4. **Lumo outputs tool calls** as JSON in code fences:
-   ````
+   - With client tools the proxy always injects into the **last** user message (so long sessions do not drop the protocol).
+   - `instructions.injectInto` only applies when the request has no tools (`first` or `last`).
+4. **Lumo outputs tool calls** as one raw JSON line (fences still work if the model uses them):
+   ```
    I'll check the weather for you.
-   ```json
    {"name": "user:get_weather", "arguments": {"city": "Paris"}}
    ```
-   ````
    *If Lumo misroutes the tool call through its native pipeline, lumo-tamer bounces it, after which Lumo will output JSON (hopefully). See [Misrouted Tool Calls](#misrouted-tool-calls).*
 5. **lumo-tamer detects and extracts** tool calls, strips the prefix, and returns in OpenAI format
 6. **Your client executes** the tool and sends results back
@@ -224,14 +246,3 @@ Sometimes Lumo routes a custom tool through its native SSE pipeline instead of o
 5. Normal detection extracts the tool call
 
 This is transparent to API clients - the bounce happens internally.
-
----
-
-## Key Code
-
-| File | Purpose |
-|------|---------|
-| `src/api/instructions.ts` | Instruction template assembly |
-| `src/api/routes/responses/tool-processor.ts` | `StreamingToolDetector` for streaming detection |
-| `src/api/tool-parser.ts` | Non-streaming tool call extraction |
-| `src/lumo-client/client.ts` | Misrouted tool bounce logic |

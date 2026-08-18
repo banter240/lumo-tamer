@@ -23,6 +23,7 @@ describe('GET /health', () => {
     const body = await res.json();
     expect(body.status).toBe('ok');
     expect(body.queue).toEqual({ size: 0, pending: 0 });
+    expect(body.auth).toEqual({ available: false });
   });
 });
 
@@ -44,5 +45,20 @@ describe('GET /v1/models', () => {
     const ids = body.data.map((m: { id: string }) => m.id);
     // Defaults from config.defaults.yaml
     expect(ids).toEqual(['lumo', 'lumo-lite', 'lumo-max']);
+  });
+});
+
+describe('GET /v1/models/:id', () => {
+  it('returns a single advertised model', async () => {
+    const res = await fetch(`${ts.baseUrl}/v1/models/lumo-max`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.id).toBe('lumo-max');
+    expect(body.owned_by).toBe('proton');
+  });
+
+  it('returns 404 for an unknown model', async () => {
+    const res = await fetch(`${ts.baseUrl}/v1/models/gpt-4`);
+    expect(res.status).toBe(404);
   });
 });

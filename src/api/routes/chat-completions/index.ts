@@ -1,17 +1,16 @@
 import { Router, Request, Response } from 'express';
 import { EndpointDependencies, OpenAIChatRequest, OpenAIChatResponse } from '../../types.js';
-import { getServerConfig, getConversationsConfig, getLogConfig, getServerInstructionsConfig, getReasoningConfig } from '../../../app/config.js';
-import { modelToTier, normalizeModelId, isModelAllowed, resolveReasoning, isValidReasoningEffort } from '../../../lumo-client/model-tier.js';
-import type { LumoModelTier } from '../../../lumo-client/types.js';
+import { getLogConfig } from '../../../app/config.js';
 import { logger } from '../../../app/logger.js';
 import { convertOpenAIChatMessages, extractSystemMessage } from '../../message-converter.js';
-import { buildInstructions } from '../../instructions.js';
+import { parseResponseFormat, buildJsonFormatInstruction, stripJsonFences } from '../../response-format.js';
 import { getMetrics } from '../../../app/metrics.js';
 import { ChatCompletionEventEmitter } from './events.js';
 import type { Turn } from '../../../lumo-client/index.js';
 import type { ConversationId } from '../../../conversations/types.js';
-import { trackCustomToolCompletion } from '../../tools/call-id.js';
+import { flattenAndTrackClientTools } from '../../tools/call-id.js';
 import { createStreamingToolProcessor } from '../../tools/streaming-processor.js';
+import { extractClientToolNames } from '../../tools/prefix.js';
 import {
   buildRequestContext,
   persistTitle,
@@ -20,25 +19,17 @@ import {
   mapToolCallsForPersistence,
   tryExecuteCommand,
   setSSEHeaders,
+  toOpenAIChatUsage,
 } from '../shared.js';
+import {
+  conversationIdFromUserField,
+  invalidModelOrEffort,
+  isDebugLogging,
+  persistInboundTurns,
+  tryPrepareTools,
+  resolveRequestTier,
+} from '../../request-prep.js';
 import { sendInvalidRequest, sendServerError } from '../../error-handler.js';
-import { deterministicUUID } from '../../../app/id-generator.js';
-
-/** Extract tool_call_id from a role: 'tool' message. */
-function extractToolCallId(msg: unknown): string | undefined {
-  if (typeof msg !== 'object' || msg === null) return undefined;
-  const obj = msg as Record<string, unknown>;
-  if (obj.role === 'tool' && typeof obj.tool_call_id === 'string') return obj.tool_call_id;
-  return undefined;
-}
-
-/**
- * Generate a deterministic conversation ID from the `user` field in the request.
- * Used for clients like Home Assistant that set `user` to their internal conversation_id.
- */
-function generateConversationIdFromUser(user: string): ConversationId {
-  return deterministicUUID(`user:${user}`);
-}
 
 export function createChatCompletionsRouter(deps: EndpointDependencies): Router {
   const router = Router();
@@ -47,8 +38,24 @@ export function createChatCompletionsRouter(deps: EndpointDependencies): Router 
     try {
       const request: OpenAIChatRequest = req.body;
 
-      // Debug: log inbound message roles/content lengths to diagnose empty user content
-      try {
+      logger.info({
+        model: request.model,
+        stream: request.stream ?? false,
+        messageCount: Array.isArray(request.messages) ? request.messages.length : 0,
+        toolNames: extractClientToolNames(request.tools),
+        messageRoles: Array.isArray(request.messages)
+          ? request.messages.map((m) => {
+              const obj = m as { role?: string; type?: string; tool_calls?: Array<{ function?: { name?: string } }> };
+              return {
+                role: obj.role,
+                type: obj.type,
+                toolCalls: obj.tool_calls?.map((tc) => tc.function?.name).filter(Boolean),
+              };
+            })
+          : [],
+      }, '[chat-completions] request');
+
+      if (isDebugLogging()) {
         const debugMessages = Array.isArray(request.messages)
           ? request.messages.map((m, i) => {
               const content = typeof m.content === 'string' ? m.content : '';
@@ -66,8 +73,6 @@ export function createChatCompletionsRouter(deps: EndpointDependencies): Router 
           messageCount: Array.isArray(request.messages) ? request.messages.length : 0,
           debugMessages,
         }, '[chat-completions] inbound request summary');
-      } catch (debugError) {
-        logger.warn({ error: String(debugError) }, '[chat-completions] failed to build inbound debug summary');
       }
 
       // Validate request
@@ -75,72 +80,55 @@ export function createChatCompletionsRouter(deps: EndpointDependencies): Router 
         return sendInvalidRequest(res, 'messages must be a non-empty array', 'messages', 'missing_messages');
       }
 
+      request.messages = flattenAndTrackClientTools(request.messages);
+
       // Get the last user message
-      const lastUserMessage = [...request.messages].reverse().find(m => m.role === 'user');
+      const lastUserMessage = [...request.messages].reverse().find(m =>
+        m.role === 'user' || m.role === 'tool' || (m as { type?: string }).type === 'function_call_output'
+      );
       if (!lastUserMessage) {
         return sendInvalidRequest(res, 'At least one user message is required', 'messages', 'missing_user_message');
       }
 
-      // Validate model + reasoning_effort before any side effects (persistence, SSE, queue).
-      if (request.model !== undefined && request.model !== null) {
-        const allowedModels = getServerConfig().allowedModels;
-        if (typeof request.model !== 'string' || !isModelAllowed(normalizeModelId(request.model), allowedModels)) {
-          return sendInvalidRequest(
-            res,
-            `Unknown model '${String(request.model)}'. Allowed models: ${allowedModels.join(', ')}`,
-            'model',
-            'model_not_found',
-          );
-        }
-      }
-      if (!isValidReasoningEffort(request.reasoning_effort)) {
-        return sendInvalidRequest(
-          res,
-          `Invalid reasoning_effort '${String(request.reasoning_effort)}'. Allowed: none, low, medium, high`,
-          'reasoning_effort',
-          'invalid_reasoning_effort',
-        );
+      const modelError = invalidModelOrEffort(request.model, request.reasoning_effort, 'reasoning_effort');
+      if (modelError) {
+        return sendInvalidRequest(res, modelError.message, modelError.param, modelError.code);
       }
 
-      // ===== Generate conversation ID for persistence =====
-      // Chat Completions has no conversation parameter per OpenAI spec.
-      // We use deriveIdFromUser to track conversations for Proton sync.
-      // Without a deterministic ID, treat the request as stateless (no persistence).
-      let conversationId: ConversationId | undefined;
-      if (getConversationsConfig()?.deriveIdFromUser && request.user) {
-        // Home Assistant sets `user` to its internal conversation_id, unique per chat session.
-        conversationId = generateConversationIdFromUser(request.user);
-      }
-      // No else - leave undefined for stateless requests
-
-      // ===== Track tool completions (all requests) =====
-      // Set-based dedup in trackCustomToolCompletion prevents double-counting
-      for (const msg of request.messages) {
-        const callId = extractToolCallId(msg);
-        if (callId) {
-          trackCustomToolCompletion(callId);
-        }
-      }
+      const conversationId = conversationIdFromUserField(request.user);
 
       // ===== Convert messages to Lumo turns =====
-      const turns = convertOpenAIChatMessages(request.messages);
+      const turns = await convertOpenAIChatMessages(request.messages);
 
       // ===== Build instructions (injected in LumoClient, not persisted) =====
       const systemContent = extractSystemMessage(request.messages);
-      const instructions = buildInstructions(request.tools, systemContent);
-      const { injectInto } = getServerInstructionsConfig();
-
-      // ===== Persist incoming messages (stateful only) =====
-      if (conversationId && deps.conversationStore && turns.length > 0) {
-        deps.conversationStore.appendMessages(conversationId, turns);
-        logger.debug({ conversationId, messageCount: turns.length }, 'Persisted conversation messages');
-      } else if (!conversationId) {
-        // Stateless request - track +1 user message (not deduplicated)
-        getMetrics()?.messagesTotal.inc({ role: 'user' });
+      let jsonFormat;
+      try {
+        jsonFormat = parseResponseFormat(request.response_format);
+      } catch (error) {
+        return sendInvalidRequest(
+          res,
+          error instanceof Error ? error.message : 'Invalid response_format',
+          'response_format',
+          'invalid_response_format',
+        );
       }
+      const prepared = tryPrepareTools(
+        request.tools,
+        request.tool_choice,
+        systemContent,
+        jsonFormat ? buildJsonFormatInstruction(jsonFormat) : undefined,
+        turns.filter((t) => t.role === 'user').length > 1,
+      );
+      if (!prepared.ok) {
+        return sendInvalidRequest(res, prepared.message, 'tool_choice', 'invalid_tool_choice');
+      }
+      const { tools: effectiveTools, instructions, injectInto } = prepared.prepared;
+
+      persistInboundTurns(deps, conversationId, turns);
 
       // Add to queue and process
-      await handleChatRequest(res, deps, request, turns, conversationId, request.stream ?? false, instructions, injectInto);
+      await handleChatRequest(res, deps, request, turns, conversationId, request.stream ?? false, instructions, injectInto, effectiveTools);
     } catch (error) {
       logger.error('Error processing chat completion:');
       logger.error(error);
@@ -159,21 +147,22 @@ async function handleChatRequest(
   conversationId: ConversationId | undefined,
   streaming: boolean,
   instructions: string | undefined,
-  injectInstructionsInto: 'first' | 'last'
+  injectInstructionsInto: 'first' | 'last',
+  effectiveTools?: OpenAIChatRequest['tools'],
 ): Promise<void> {
   const id = generateChatCompletionId();
   const created = Math.floor(Date.now() / 1000);
-  const serverConfig = getServerConfig();
-  const model = request.model || serverConfig.apiModelName;
-  const ctx = buildRequestContext(deps, conversationId, request.tools);
-
-  // Resolve tier (Lite/Max) and thinking mode from the inbound request.
-  const tier: LumoModelTier = request.model
-    ? modelToTier(normalizeModelId(request.model))
-    : serverConfig.defaultModelTier;
-  const reasoningConfig = getReasoningConfig();
-  const enableReasoning = resolveReasoning(request.reasoning_effort, reasoningConfig.default === 'high');
-  const surfaceThinking = reasoningConfig.surfaceThinking;
+  const { name: model, tier, enableReasoning, surfaceThinking } = resolveRequestTier(
+    request.model,
+    request.reasoning_effort,
+  );
+  const ctx = buildRequestContext(deps, conversationId, effectiveTools);
+  let jsonMode = false;
+  try {
+    jsonMode = !!parseResponseFormat(request.response_format);
+  } catch {
+    jsonMode = false;
+  }
 
   // Streaming setup
   const emitter = streaming ? new ChatCompletionEventEmitter(res, id, created, model) : null;
@@ -184,27 +173,36 @@ async function handleChatRequest(
   let accumulatedText = '';
   let reasoningContent: string | undefined;
   let toolCalls: typeof processor.toolCallsEmitted | undefined;
+  let usage = toOpenAIChatUsage();
 
-  const processor = createStreamingToolProcessor(ctx.hasCustomTools, {
-    emitTextDelta(text) {
-      accumulatedText += text;
-      emitter?.emitContentDelta(text);
+  const processor = createStreamingToolProcessor(
+    ctx.hasCustomTools,
+    {
+      emitTextDelta(text) {
+        accumulatedText += text;
+        if (!jsonMode) {
+          emitter?.emitContentDelta(text);
+        }
+      },
+      emitToolCall(callId, tc) {
+        emitter?.emitToolCallDelta(callId, tc.name, tc.arguments);
+      },
     },
-    emitToolCall(callId, tc) {
-      emitter?.emitToolCallDelta(callId, tc.name, tc.arguments);
-    },
-  });
+    extractClientToolNames(request.tools),
+  );
 
   // Check for command before calling Lumo
   const commandResult = await tryExecuteCommand(turns, ctx.commandContext);
   if (commandResult) {
     accumulatedText = commandResult.response;
-    emitter?.emitContentDelta(accumulatedText);
+    if (!jsonMode) {
+      emitter?.emitContentDelta(accumulatedText);
+    }
   } else {
     // Normal flow: call Lumo
     try {
       const result = await deps.queue.add(async () =>
-        deps.lumoClient.chatWithHistory(turns, processor.onChunk, {
+        deps.lumoClient!.chatWithHistory(turns, processor.onChunk, {
           requestTitle: ctx.requestTitle,
           instructions,
           injectInstructionsInto,
@@ -230,8 +228,13 @@ async function handleChatRequest(
         result.message,
         mapToolCallsForPersistence(processor.toolCallsEmitted)
       );
+      getMetrics()?.lumoCompletionsTotal.inc({
+        tier,
+        reasoning: enableReasoning ? 'true' : 'false',
+      });
+      usage = toOpenAIChatUsage(result.usage);
     } catch (error) {
-      logger.error({ error: String(error) }, 'Chat completion error');
+      logger.error({ error }, 'Chat completion error');
       if (emitter) {
         emitter.emitError(error as Error);
       } else {
@@ -243,8 +246,14 @@ async function handleChatRequest(
 
   // Build and send response (shared for both command and normal flow)
   try {
+    if (jsonMode) {
+      accumulatedText = stripJsonFences(accumulatedText);
+    }
     if (emitter) {
-      emitter.emitDone(toolCalls);
+      if (jsonMode) {
+        emitter.emitContentDelta(accumulatedText);
+      }
+      emitter.emitDone(toolCalls, usage);
     } else {
       const response: OpenAIChatResponse = {
         id,
@@ -261,11 +270,12 @@ async function handleChatRequest(
           },
           finish_reason: toolCalls ? 'tool_calls' : 'stop',
         }],
+        ...(usage ? { usage } : {}),
       };
       res.json(response);
     }
   } catch (error) {
-    logger.error({ error: String(error) }, 'Error sending chat completion response');
+    logger.error({ error }, 'Error sending chat completion response');
     if (emitter) {
       emitter.emitError(error as Error);
     } else {

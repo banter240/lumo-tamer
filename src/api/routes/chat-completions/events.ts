@@ -61,13 +61,14 @@ export class ChatCompletionEventEmitter {
     this.res.write(`data: ${JSON.stringify(chunk)}\n\n`);
   }
 
-  emitDone(toolCalls: OpenAIToolCall[] | undefined): void {
+  emitDone(toolCalls: OpenAIToolCall[] | undefined, usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number }): void {
     const finalChunk: OpenAIStreamChunk = {
       id: this.id,
       object: 'chat.completion.chunk',
       created: this.created,
       model: this.model,
       choices: [{ index: 0, delta: {}, finish_reason: toolCalls ? 'tool_calls' : 'stop' }],
+      ...(usage ? { usage } : {}),
     };
     this.res.write(`data: ${JSON.stringify(finalChunk)}\n\n`);
     this.res.write('data: [DONE]\n\n');
@@ -75,7 +76,7 @@ export class ChatCompletionEventEmitter {
   }
 
   emitError(error: Error): void {
-    const errorChunk = { error: { message: String(error), type: 'server_error' } };
+    const errorChunk = { error: { message: error.message, type: 'server_error' } };
     this.res.write(`data: ${JSON.stringify(errorChunk)}\n\n`);
     this.res.end();
   }

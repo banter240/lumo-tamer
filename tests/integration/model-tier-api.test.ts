@@ -55,3 +55,58 @@ describe('model tier + reasoning (chat/completions)', () => {
         expect(body.error.code).toBe('model_not_found');
     });
 });
+
+describe('model tier + reasoning (responses)', () => {
+    let ts: TestServer;
+    beforeAll(async () => { ts = await createTestServer('success'); });
+    afterAll(async () => { await ts.close(); });
+
+    async function respond(body: object) {
+        return fetch(`${ts.baseUrl}/v1/responses`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+    }
+
+    it('accepts a valid tier model', async () => {
+        const res = await respond({ model: 'lumo-max', input: 'hi' });
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.output[0].content[0].text).toContain('Mocked');
+    });
+
+    it('accepts a provider-prefixed tier model', async () => {
+        const res = await respond({ model: 'proton/lumo-lite', input: 'hi' });
+        expect(res.status).toBe(200);
+    });
+
+    it('rejects an unknown model with a 400', async () => {
+        const res = await respond({ model: 'gpt-4', input: 'hi' });
+        expect(res.status).toBe(400);
+        const body = await res.json();
+        expect(body.error.type).toBe('invalid_request_error');
+        expect(body.error.code).toBe('model_not_found');
+        expect(body.error.param).toBe('model');
+    });
+
+    it('accepts reasoning.effort', async () => {
+        const res = await respond({ model: 'lumo-max', reasoning: { effort: 'high' }, input: 'hi' });
+        expect(res.status).toBe(200);
+    });
+
+    it('rejects an invalid reasoning.effort with a 400', async () => {
+        const res = await respond({ reasoning: { effort: 'ludicrous' }, input: 'hi' });
+        expect(res.status).toBe(400);
+        const body = await res.json();
+        expect(body.error.code).toBe('invalid_reasoning_effort');
+        expect(body.error.param).toBe('reasoning.effort');
+    });
+
+    it('rejects a non-string model with a 400 (not a 500)', async () => {
+        const res = await respond({ model: 123, input: 'hi' });
+        expect(res.status).toBe(400);
+        const body = await res.json();
+        expect(body.error.code).toBe('model_not_found');
+    });
+});

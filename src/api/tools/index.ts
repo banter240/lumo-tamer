@@ -9,6 +9,7 @@ export {
   applyToolPrefix,
   stripToolPrefix,
   applyToolNamePrefix,
+  extractClientToolNames,
 } from './prefix.js';
 
 // Tool call types
@@ -23,7 +24,11 @@ export { JsonBraceTracker } from './json-brace-tracker.js';
 // Call ID utilities
 export {
   generateCallId,
+  isSyntheticCallId,
   extractToolNameFromCallId,
+  formatSyntheticToolResult,
+  flattenClientToolItems,
+  flattenAndTrackClientTools,
   trackCustomToolCompletion,
   addToolNameToFunctionOutput,
 } from './call-id.js';

@@ -1,50 +1,28 @@
 import { Router, Request, Response } from 'express';
-import { EndpointDependencies, OpenAIResponseRequest, FunctionCallOutput } from '../../types.js';
+import { EndpointDependencies, OpenAIResponseRequest } from '../../types.js';
 import { logger } from '../../../app/logger.js';
 import { handleRequest } from './request-handlers.js';
 import { convertOpenAIResponseMessages } from '../../message-converter.js';
-import { buildInstructions } from '../../instructions.js';
-import { getConversationsConfig, getServerInstructionsConfig, getServerConfig } from '../../../app/config.js';
-import { isModelAllowed, normalizeModelId, isValidReasoningEffort } from '../../../lumo-client/model-tier.js';
-import { getMetrics } from '../../../app/metrics.js';
-import { trackCustomToolCompletion } from '../../tools/call-id.js';
+import { flattenAndTrackClientTools } from '../../tools/call-id.js';
 import { sendInvalidRequest, sendServerError } from '../../error-handler.js';
-import { deterministicUUID } from '../../../app/id-generator.js';
+import {
+  conversationIdFromClient,
+  conversationIdFromUserField,
+  invalidModelOrEffort,
+  persistInboundTurns,
+  tryPrepareTools,
+} from '../../request-prep.js';
 
 import type { ConversationId } from '../../../conversations/index.js';
 
-/**
- * Generate a deterministic conversation ID from the `user` field in the request.
- * Used for clients like Home Assistant that set `user` to their internal conversation_id.
- *
- * Includes SESSION_ID so IDs are deterministic within a session but unique across sessions.
- */
-function generateConversationIdFromUser(user: string): ConversationId {
-  const uuid = deterministicUUID(`user:${user}`);
-  logger.debug({ user, uuid }, 'Generated deterministic conversation ID from user field');
-  return uuid;
-}
-
-/**
- * Extract conversation ID from request.conversation field (per OpenAI spec).
- * The client-provided ID is hashed with SESSION_ID to produce a session-scoped UUID.
- *
- * Known limitation: the internal conversation ID will differ across server restarts,
- * even if the client sends the same conversation ID. This is acceptable because the
- * in-memory store doesn't persist across restarts anyway.
- */
-function getConversationIdFromRequest(request: OpenAIResponseRequest): ConversationId | undefined {
+function conversationIdFromResponsesRequest(request: OpenAIResponseRequest): ConversationId | undefined {
   let clientId: string | undefined;
   if (!request.conversation) return undefined;
   if (typeof request.conversation === 'string') clientId = request.conversation;
   else if (typeof request.conversation === 'object' && 'id' in request.conversation) {
     clientId = request.conversation.id;
   }
-  if (!clientId) return undefined;
-
-  const uuid = deterministicUUID(`conversation:${clientId}`);
-  logger.debug({ clientId, uuid }, 'Mapped client-provided conversation ID to session-scoped UUID');
-  return uuid;
+  return clientId ? conversationIdFromClient(clientId) : undefined;
 }
 
 export function createResponsesRouter(deps: EndpointDependencies): Router {
@@ -68,82 +46,57 @@ export function createResponsesRouter(deps: EndpointDependencies): Router {
         );
       }
 
-      let conversationId: ConversationId | undefined;
-      const conversationFromRequest = getConversationIdFromRequest(request);
-
-      if (conversationFromRequest) {
-        // Use conversation field (per OpenAI spec)
-        conversationId = conversationFromRequest;
-      } else if (request.previous_response_id) {
-        // Use previous_response_id for stateless continuation
-        conversationId = request.previous_response_id;
-      } else if (getConversationsConfig()?.deriveIdFromUser && request.user) {
-        // WORKAROUND for clients that don't provide conversation (e.g., Home Assistant).
-        // Home Assistant sets `user` to its internal conversation_id, unique per chat session.
-        conversationId = generateConversationIdFromUser(request.user);
-      }
-      // No else - leave undefined for stateless requests
+      const conversationId =
+        conversationIdFromResponsesRequest(request)
+        ?? (request.previous_response_id || undefined)
+        ?? conversationIdFromUserField(request.user);
 
       // ===== STEP 2: Validate input =====
       if (request.input === undefined || request.input === null) {
         return sendInvalidRequest(res, 'input is required (string or message array)', 'input', 'missing_input');
       }
+      // Text-extracted tool calls use synthetic call_ids. OpenCode echoes them
+      // as function_call_output; Lumo never issued those IDs (400 + retry loop).
+      // Flatten before validation so a follow-up that is only tool output
+      // still counts as a user message.
       if (Array.isArray(request.input)) {
-        const hasUserMessage = request.input.some((m) =>
-          typeof m === 'object' && 'role' in m && m.role === 'user'
-        );
+        request.input = flattenAndTrackClientTools(request.input);
+      }
+      if (Array.isArray(request.input)) {
+        const hasUserMessage = request.input.some((m) => {
+          if (typeof m !== 'object' || m === null) return false;
+          const obj = m as { role?: string; type?: string };
+          return obj.role === 'user' || obj.role === 'tool' || obj.type === 'function_call_output';
+        });
         if (!hasUserMessage) {
           return sendInvalidRequest(res, 'input array must include at least one user message', 'input', 'missing_user_message');
         }
       }
 
-      // Validate model + reasoning effort before any side effects.
-      if (request.model !== undefined && request.model !== null) {
-        const allowedModels = getServerConfig().allowedModels;
-        if (typeof request.model !== 'string' || !isModelAllowed(normalizeModelId(request.model), allowedModels)) {
-          return sendInvalidRequest(
-            res,
-            `Unknown model '${String(request.model)}'. Allowed models: ${allowedModels.join(', ')}`,
-            'model',
-            'model_not_found',
-          );
-        }
-      }
-      if (!isValidReasoningEffort(request.reasoning?.effort)) {
-        return sendInvalidRequest(
-          res,
-          `Invalid reasoning.effort '${String(request.reasoning?.effort)}'. Allowed: none, low, medium, high`,
-          'reasoning.effort',
-          'invalid_reasoning_effort',
-        );
+      const modelError = invalidModelOrEffort(request.model, request.reasoning?.effort, 'reasoning.effort');
+      if (modelError) {
+        return sendInvalidRequest(res, modelError.message, modelError.param, modelError.code);
       }
 
       // ===== STEP 3: Convert input to turns =====
       // Handles normal messages, function_call, and function_call_output items.
-      const turns = convertOpenAIResponseMessages(request.input, request.instructions);
+      const turns = await convertOpenAIResponseMessages(request.input, request.instructions);
 
       // ===== Build instructions (injected in LumoClient, not persisted) =====
-      const instructions = buildInstructions(request.tools, request.instructions);
-      const { injectInto } = getServerInstructionsConfig();
-
-      // ===== STEP 4: Track tool completions =====
-      // Track completion for all function_call_outputs (Set-based dedup prevents double-counting)
-      if (Array.isArray(request.input)) {
-        for (const item of request.input) {
-          if (typeof item === 'object' && 'type' in item && (item as FunctionCallOutput).type === 'function_call_output') {
-            trackCustomToolCompletion((item as FunctionCallOutput).call_id);
-          }
-        }
+      const prepared = tryPrepareTools(
+        request.tools,
+        request.tool_choice,
+        request.instructions,
+        undefined,
+        turns.filter((t) => t.role === 'user').length > 1,
+      );
+      if (!prepared.ok) {
+        return sendInvalidRequest(res, prepared.message, 'tool_choice', 'invalid_tool_choice');
       }
+      request.tools = prepared.prepared.tools;
+      const { instructions, injectInto } = prepared.prepared;
 
-      // ===== STEP 5: Persist incoming messages (stateful only) =====
-      if (conversationId && deps.conversationStore && turns.length > 0) {
-        deps.conversationStore.appendMessages(conversationId, turns);
-        logger.debug({ conversationId, messageCount: turns.length }, 'Persisted conversation messages');
-      } else if (!conversationId) {
-        // Stateless request - track +1 user message (not deduplicated)
-        getMetrics()?.messagesTotal.inc({ role: 'user' });
-      }
+      persistInboundTurns(deps, conversationId, turns);
 
       // ===== STEP 6: Add to queue and process =====
       await handleRequest(res, deps, request, turns, conversationId, request.stream ?? false, instructions, injectInto);

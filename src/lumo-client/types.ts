@@ -14,6 +14,7 @@ export type {
 } from '@lumo/lib/lumo-api-client/core/types.js';
 
 export { Role } from '@lumo/types-api.js';
+import type { GeneratedImage } from './images.js';
 
 // Local-only types
 
@@ -146,6 +147,8 @@ export interface LumoClientOptions {
     enableReasoning?: boolean;
     /** Sink for reasoning/thinking chunks (always drained, even if unused). */
     onReasoning?: (content: string) => void;
+    /** Sink for completed generated images. */
+    onImage?: (image: GeneratedImage) => void;
 }
 
 /** Result from a chat request. */
@@ -154,6 +157,8 @@ export interface ChatResult {
     message: AssistantMessageData;
     /** Accumulated reasoning/thinking text (when reasoning_effort was high) */
     reasoning?: string;
+    /** Images Lumo generated during this completion. */
+    images?: GeneratedImage[];
     /** Usage/limit metadata from the final `usage` chunk */
     usage?: LumoUsage;
     /** Generated conversation title (for new conversations) */

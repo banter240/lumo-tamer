@@ -53,6 +53,11 @@ describe('isToolCallJson', () => {
   it('rejects name that is not a string', () => {
     expect(isToolCallJson({ name: 42, arguments: {} })).toBe(false);
   });
+
+  it('accepts flattened params only when the name is prefixed', () => {
+    expect(isToolCallJson({ name: 'user:bash', command: 'ls' })).toBe(true);
+    expect(isToolCallJson({ name: 'Max', alter: 30 })).toBe(false);
+  });
 });
 
 describe('parseToolCallJson', () => {
@@ -66,5 +71,12 @@ describe('parseToolCallJson', () => {
 
   it('parses nested function shape with JSON string args', () => {
     expect(parseToolCallJson({ type: 'function', function: { name: 'search', arguments: '{"q":"x"}' } })).toEqual({ name: 'search', arguments: { q: 'x' } });
+  });
+
+  it('lifts flattened prefixed keys into arguments', () => {
+    expect(parseToolCallJson({ name: 'user:bash', command: 'ls -la' })).toEqual({
+      name: 'user:bash',
+      arguments: { command: 'ls -la' },
+    });
   });
 });

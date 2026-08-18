@@ -69,9 +69,16 @@ export interface LumoExtension {
     request_id?: string;
 }
 
+export interface ChatCompletionsMessage {
+    role: string;
+    content: string;
+    encrypted?: true;
+    images?: Array<{ image_id: string; data: string; encrypted: boolean }>;
+}
+
 export interface ChatCompletionsBody {
     model: string;
-    messages: Array<{ role: string; content: string; encrypted?: true }>;
+    messages: ChatCompletionsMessage[];
     stream: true;
     stream_options: { include_usage: true };
     reasoning_effort: 'high' | 'none';
@@ -82,11 +89,21 @@ export interface ChatCompletionsBody {
 
 /** Build the POST body for `ai/v1/chat/completions`. */
 export function buildChatCompletionsBody(params: BuildChatBodyParams): ChatCompletionsBody {
-    const messages = params.turns.map((turn) => ({
-        role: messageRole(turn.role),
-        content: turn.content ?? '',
-        ...(params.encrypted ? { encrypted: true as const } : {}),
-    }));
+    const messages = params.turns.map((turn) => {
+        const message: ChatCompletionsMessage = {
+            role: messageRole(turn.role),
+            content: turn.content ?? '',
+            ...(params.encrypted ? { encrypted: true as const } : {}),
+        };
+        if (turn.images && turn.images.length > 0) {
+            message.images = turn.images.map((image) => ({
+                image_id: image.image_id,
+                data: image.data,
+                encrypted: image.encrypted,
+            }));
+        }
+        return message;
+    });
 
     const lumo: LumoExtension = { client_type: 'frontend' };
     if (params.target) {

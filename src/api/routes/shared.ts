@@ -1,11 +1,13 @@
 import { randomUUID } from 'crypto';
 import type { Response } from 'express';
 import { getCustomToolsConfig } from '../../app/config.js';
+import { shouldRequestTitle } from '../request-prep.js';
 import { getMetrics } from '../../app/metrics';
 import type { CommandContext } from '../../app/commands.js';
 import type { EndpointDependencies, OpenAITool, OpenAIToolCall } from '../types.js';
 import type { ConversationId } from '../../conversations/types.js';
-import type { ChatResult, AssistantMessageData } from '../../lumo-client/index.js';
+import type { ChatResult, AssistantMessageData, LumoUsage } from '../../lumo-client/index.js';
+import type { OpenAIChatResponse } from '../types.js';
 
 // Re-export for convenience
 export { tryExecuteCommand, type CommandResult } from '../../app/commands.js';
@@ -42,10 +44,18 @@ export interface RequestContext {
   requestTitle: boolean;
 }
 
-/**
- * Build the common request context shared by all handler variants.
- * When conversationId is undefined (stateless request), requestTitle is false.
- */
+/** Proton only reports completion_tokens. Prompt count is unknown. */
+export function toOpenAIChatUsage(usage?: LumoUsage): OpenAIChatResponse['usage'] | undefined {
+  if (usage?.completion_tokens == null) return undefined;
+  return {
+    prompt_tokens: 0,
+    completion_tokens: usage.completion_tokens,
+    total_tokens: usage.completion_tokens,
+  };
+}
+
+export { resolveInjectInto } from '../request-prep.js';
+
 export function buildRequestContext(
   deps: EndpointDependencies,
   conversationId: ConversationId | undefined,
@@ -59,10 +69,7 @@ export function buildRequestContext(
       conversationId,
       authManager: deps.authManager,
     },
-    // Only request title for stateful conversations that haven't been titled yet
-    requestTitle: conversationId
-      ? deps.conversationStore?.get(conversationId)?.title === 'New Conversation'
-      : false,
+    requestTitle: shouldRequestTitle(deps, conversationId),
   };
 }
 

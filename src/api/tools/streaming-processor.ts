@@ -37,21 +37,29 @@ export interface StreamingToolProcessor {
  */
 export function createStreamingToolProcessor(
   hasCustomTools: boolean,
-  emitter: StreamingToolEmitter
+  emitter: StreamingToolEmitter,
+  knownToolNames?: Iterable<string>,
 ): StreamingToolProcessor {
-  const detector = hasCustomTools ? new StreamingToolDetector() : null;
+  if (!hasCustomTools) {
+    logger.info('[tools] detector off (customTools disabled or client sent no tools[])');
+  } else {
+    logger.info({ known: [...(knownToolNames ?? [])] }, '[tools] detector on');
+  }
+  const detector = hasCustomTools
+    ? new StreamingToolDetector({ knownToolNames })
+    : null;
   const toolCallsEmitted: OpenAIToolCall[] = [];
 
   function processToolCalls(completedToolCalls: ParsedToolCall[]): void {
     for (const tc of completedToolCalls) {
-      const callId = generateCallId(tc.name);
+      const callId = generateCallId(tc.name, true);
       toolCallsEmitted.push({
         id: callId,
         type: 'function',
         function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
       });
       emitter.emitToolCall(callId, tc);
-      logger.debug({ tool: tc.name }, '[Server] Tool call emitted in stream');
+      logger.info({ tool: tc.name, callId, args: tc.arguments }, '[tools] executed (emitted to client)');
     }
   }
 
@@ -89,13 +97,16 @@ export interface AccumulatingToolProcessor {
  * Create a tool processor that accumulates text instead of emitting.
  * Used for non-streaming requests that still process the Lumo stream.
  */
-export function createAccumulatingToolProcessor(hasCustomTools: boolean): AccumulatingToolProcessor {
+export function createAccumulatingToolProcessor(
+  hasCustomTools: boolean,
+  knownToolNames?: Iterable<string>,
+): AccumulatingToolProcessor {
   let accumulatedText = '';
 
   const processor = createStreamingToolProcessor(hasCustomTools, {
     emitTextDelta(text) { accumulatedText += text; },
     emitToolCall(_callId, _tc) { /* tool calls tracked in processor.toolCallsEmitted */ },
-  });
+  }, knownToolNames);
 
   return {
     processor,

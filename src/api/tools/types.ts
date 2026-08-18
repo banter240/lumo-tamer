@@ -33,6 +33,11 @@ export function isToolCallJson(json: unknown): boolean {
   }
 
   if (typeof obj.name === 'string' && ('arguments' in obj || 'parameters' in obj)) return true;
+  // Flattened call: {"name":"user:bash","command":"ls"} — only if name looks prefixed.
+  if (typeof obj.name === 'string' && obj.name.includes(':')) {
+    const extra = Object.keys(obj).filter((key) => key !== 'name' && key !== 'type');
+    if (extra.length > 0) return true;
+  }
 
   const fn = obj.function as Record<string, unknown> | undefined;
   if (fn && typeof fn === 'object' && typeof fn.name === 'string' && ('arguments' in fn || 'parameters' in fn)) {
@@ -51,8 +56,15 @@ export function parseToolCallJson(json: unknown): ParsedToolCall | null {
   const obj = json as Record<string, unknown>;
 
   if (typeof obj.name === 'string') {
-    const rawArgs = obj.arguments ?? obj.parameters;
-    return { name: obj.name, arguments: asObject(rawArgs) };
+    if ('arguments' in obj || 'parameters' in obj) {
+      return { name: obj.name, arguments: asObject(obj.arguments ?? obj.parameters) };
+    }
+    if (obj.name.includes(':')) {
+      const rest = { ...obj };
+      delete rest.name;
+      delete rest.type;
+      return { name: obj.name, arguments: rest };
+    }
   }
 
   const fn = obj.function as Record<string, unknown> | undefined;

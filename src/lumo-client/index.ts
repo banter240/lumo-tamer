@@ -15,4 +15,7 @@ export type {
     AssistantMessageData,
     LumoClientOptions,
     ChatResult,
+    LumoUsage,
 } from './types.js';
+export type { GeneratedImage } from './images.js';
+export { formatImagesForClient, IMAGE_TOOLS } from './images.js';
