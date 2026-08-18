@@ -22,7 +22,7 @@ You should be comfortable with editing configuration files, running terminal com
 **Prerequisites**
 - Home Assistant installed and running
 - A Proton account (free works, [Lumo Plus](https://lumo.proton.me/) gives unlimited daily chats and more)
-- A computer or server to run lumo-tamer on the same private network or machine as Home Assistan
+- A computer or server to run lumo-tamer on the same private network or machine as Home Assistant
 
 **Be aware:** The use of lumo-tamer may violate Proton's terms of service; use at your own risk. [Full Disclaimer](../README.md/#full-disclaimer)
 
@@ -35,7 +35,7 @@ Choose your installation method for lumo-tamer. Docker is recommended if you're 
 | Method | Requirements |
 |--------|--------------|
 | [Docker Setup](#docker-setup) | Docker, Git |
-| [Native Setup](#native-setup) | Node.js 18+, Go 1.24+, Git |
+| [Native Setup](#native-setup) | Node.js 18+ (22 recommended), Go 1.25+, Git |
 
 ---
 
@@ -44,14 +44,19 @@ Choose your installation method for lumo-tamer. Docker is recommended if you're 
 #### Step 1: Install
 
 ```bash
-git clone https://github.com/ZeroTricks/lumo-tamer.git
+git clone https://github.com/banter240/lumo-tamer.git
 cd lumo-tamer
-docker compose build tamer
+git checkout dev
 # Create secret key to encrypt the token vault (or alternatively, use another secrets manager)
 mkdir -p secrets && chmod 700 secrets
 openssl rand -base64 32 > secrets/lumo-vault-key
 chmod 600 secrets/lumo-vault-key
+cp -n .env.example .env
+# Compose bind-mounts this file. If it is missing, Docker creates a directory.
+touch config.yaml
 ```
+
+The container runs the GHCR tag in `.env` (`LUMO_TAMER_IMAGE`), not this git checkout. Default is `:dev`.
 
 #### Step 2: Configure
 
@@ -61,19 +66,26 @@ Create `config.yaml`:
 server:
   apiKey: "your-secret-api-key-here"
   customTools:
-    enabled: true  # allows Lumo to control your devices
-  enableWebSearch: true # optionally, enable Lumo's own websearch
+    enabled: true  # default; needed for Assist device tools
+  enableWebSearch: true # optional; Lumo's own web search (off in defaults)
+  reasoning:
+    default: high  # HA omits effort; defaults file is none (compact)
 ```
+
+If you customize `instructions.forTools` with Home Assistant nested `ha_call_*` / Hass* examples, copy the same nesting into `forToolsCompact`. Follow-up turns only send the compact protocol; tool schemas stay in full.
 
 > **Security:** Keep your API key private and make sure lumo-tamer is only accessible from your local network, not the internet.
 
 #### Step 3: Authenticate with Proton
 
 ```bash
-docker compose run --rm -it tamer auth login
+docker compose up -d tamer
+# open http://<host>:3003/auth
 ```
 
-Enter your Proton email, password, and 2FA code (if enabled).
+Type your Proton email, password, and 2FA if you use it. No extra container.
+
+Optional: [web config](config.md) at `http://<host>:3003/config` (web search, reasoning, tools).
 
 <details>
 <summary><strong>I'm asked to enter a CAPTCHA</strong></summary>
@@ -89,16 +101,10 @@ Proton's security model doesn't allow for a simple OAuth authentication. Your cr
 </details>
 <br>
 
-#### Step 4: Start the server
+#### Step 4: Verify
 
 ```bash
-docker compose up -d tamer
-```
-
-#### Step 5: Verify
-
-```bash
-curl http://localhost:3003/health # Should return: {"status":"ok"}
+curl http://localhost:3003/health # Should include "status":"ok"
 docker compose logs -f tamer
 ```
 
@@ -123,14 +129,15 @@ brew install node go git
 **Verify:**
 ```bash
 node --version   # Should show v18.x or higher
-go version       # Should show go1.24 or higher
+go version       # Should show go1.25 or higher
 ```
 
 #### Step 2: Clone and build
 
 ```bash
-git clone https://github.com/ZeroTricks/lumo-tamer.git
+git clone https://github.com/banter240/lumo-tamer.git
 cd lumo-tamer
+git checkout dev
 npm install && npm run build:all
 # Optionally install command `tamer` globally
 # If you don't, replace "tamer" with "npx lumo-tamer" in all commands
@@ -145,9 +152,13 @@ Create `config.yaml`:
 server:
   apiKey: "your-secret-api-key-here"
   customTools:
-    enabled: true  # allows Lumo to control your devices
-  enableWebSearch: true # optionally, enable Lumo's own websearch
+    enabled: true  # default; needed for Assist device tools
+  enableWebSearch: true # optional; Lumo's own web search (off in defaults)
+  reasoning:
+    default: high  # HA omits effort; defaults file is none (compact)
 ```
+
+If you customize `instructions.forTools` with Home Assistant nested `ha_call_*` / Hass* examples, copy the same nesting into `forToolsCompact`. Follow-up turns only send the compact protocol; tool schemas stay in full.
 
 > **Security:** Keep your API key private and make sure lumo-tamer is only accessible from your local network, not the internet.
 
@@ -201,7 +212,7 @@ In a new terminal:
 
 ```bash
 curl http://localhost:3003/health
-# Should return: {"status":"ok"}
+# JSON includes "status":"ok" (plus queue and auth)
 ```
 
 **→ Continue to [Part 2: Configure Home Assistant](#part-2-configure-home-assistant)**
@@ -243,7 +254,8 @@ OPENAI_BASE_URL=http://YOUR_SERVER_IP:3003/v1
 2. Click **Add Integration**
 3. Select **OpenAI**
 4. Enter your lumo-tamer API key
-5. Click **Submit**
+5. Set the model to `lumo` or `lumo-max` (other names such as `gpt-4o` return HTTP 400)
+6. Click **Submit**
 
 If you see an error, check that:
 - lumo-tamer is running
@@ -279,6 +291,7 @@ Follow the [HACS installation guide](https://hacs.xyz/docs/setup/download).
    - **Name:** Lumo (or whatever you like)
    - **API Key:** Your lumo-tamer API key
    - **Base URL:** `http://YOUR_SERVER_IP:3003/v1`
+   - **Model:** `lumo` or `lumo-max` (not `gpt-4o`)
    - Leave other fields empty
 5. Click **Submit**, then **Skip** on the next popup
 
@@ -294,6 +307,7 @@ Follow the [HACS installation guide](https://hacs.xyz/docs/setup/download).
    - **Name:** "Lumo" (or whatever you like)
    - **Language:** Your preferred language
    - **Conversation agent:** Select the OpenAI integration you just added
+   - **Model:** `lumo` or `lumo-max` if the agent lets you pick one
    - **Prefer handling commands locally:** choose your preference
 4. Click the **Gear Icon** next to your agent:
    - For standard OpenAI: Make sure **Assist** is checked
@@ -353,6 +367,10 @@ Lumo taking a few seconds to answer is to be expected. If you encounter larger r
 - Reduce the number of exposed entities.
 - Enable Home Assistant's built-in intent recognition to handle simple commands locally.
 - Lumo might [misroute](custom-tools.md#misrouted-tool-calls) tool calls, which lumo-tamer needs to redirect, adding to the latency. Enable debug logging for lumo-tamer (`server.log.level: debug`), look for "misrouted tool calls" and experiment with settings `server.instructions` to get better results.
+
+### Home Assistant reports an unknown model / HTTP 400
+
+The conversation agent model must be `lumo`, `lumo-lite`, or `lumo-max`. Stock OpenAI names are rejected.
 
 ### Device control not working or Lumo saying "I can't do that"
 

@@ -86,7 +86,7 @@ server:
       {{/if}}
 
       {{#if tools}}
-      Below are all the custom tools you can use. Remember, all tools prefixed with `{{prefix}}` are custom tools and must be called by outputting the JSON to the user.
+      Below are all the custom tools you can use. Remember, all tools prefixed with `{{prefix}}` are custom tools and must be called by outputting the JSON to the user. Copy each "name" exactly as listed, including `{{prefix}}`. Do not shorten or invent names.
 
       {{tools}}
       {{/if}}
@@ -99,22 +99,31 @@ server:
     # Can use {{prefix}} variable.
     forTools: |
       === CUSTOM TOOL PROTOCOL ===
-      Call custom tools (names start with `{{prefix}}`) with ONE raw JSON object
-      on its own line. No markdown fences, no extra text on that line.
+      The tools below are CUSTOM tools, prefixed with `{{prefix}}`.
 
+      IMPORTANT: Custom tools are NOT part of your built-in tool system.
+      You MUST call them by outputting JSON as text in a code block to the user, like this:
+      ```json
       {"name": "{{prefix}}example_tool", "arguments": {"param": "value"}}
+      ```
+      example_tool is only the shape. Never call that name.
+      Copy "name" exactly from the tool list below, including `{{prefix}}`.
+      Do not shorten, rename, or invent names.
+      Put every parameter inside "arguments" and match that tool's schema
+      (arrays are JSON arrays [...], objects are {...}). One object per call.
 
-      Preferred: a ```json fence (ZeroTricks). Also accepted: one raw JSON line.
-      Always keep the prefix. Always nest parameters under "arguments".
-      One object at a time.
+      DO NOT try to call custom tools through your internal tool mechanism, it will fail with error:true. If you receive such an error, don't try again with different arguments, but output the JSON as text to the user.
+      DO NOT remove the `{{prefix}}` prefix when calling these tools.
+
+      The user's system will execute them and return results.
       === END PROTOCOL ===
 
     # Used on follow-up turns (more than one user message after flatten).
     # Tool schemas are still sent in full. compact only shortens this wrapper.
     forToolsCompact: |
-      Custom tools: one raw JSON line, no fences.
-      {"name":"{{prefix}}tool","arguments":{"param":"value"}}
-      Prefix and arguments wrapper are required.
+      Custom tools: JSON in a ```json code block. Copy "name" exactly from the list
+      below (keep `{{prefix}}`). Do not shorten names. Parameters go in "arguments";
+      arrays stay arrays. One object per call.
 
     # tool_choice: required / named function (auto is the default; none drops tools)
     forToolRequired: |
@@ -124,8 +133,7 @@ server:
 
     # Bounce instruction sent when Lumo routes a custom tool through its native pipeline.
     forToolBounce: |
-      You tried to call a custom tool through your built-in tool system. Emit one raw JSON line instead, no fences:
-      {"name": "{{prefix}}tool", "arguments": {"param": "value"}}
+      You tried to call a custom tool using your built-in tool system, but custom tools must be called by outputting JSON text within a code block. Please output the tool call as JSON, like this:
 ```
 
 ### Instruction Replace Patterns
@@ -151,9 +159,9 @@ Follow-up turns use `forToolsCompact` instead of `forTools` (when there is more 
 
 **Tool calls not detected**
 - Ensure `customTools.enabled: true`
-- Check that Lumo emits raw JSON on its own line (`{"name":"user:…","arguments":{…}}`)
-- Review `instructions.forTools` if the model still uses fences or flattens arguments
-- The proxy locates a tool blob in the stream, then extracts `{name, arguments}`: strict JSON, jammed objects, then a lenient parse (raw newlines / quotes in strings, trailing fences). If it still fails, the log says `[tools] not executed` with the reason.
+- Check that Lumo emits JSON in a ```json code block (`{"name":"user:…","arguments":{…}}`)
+- If the log says `name not in client tools[]`, Lumo shortened or invented the name. The prompt tells it to copy `name` from the list; a shorter name is not executed.
+- The proxy locates a tool blob in the stream, then extracts `{name, arguments}`: strict JSON, jammed objects, then a lenient parse. If it still fails, the log says `[tools] not executed` with the reason.
 
 **Wrong tool names**
 - Check `customTools.prefix` - it's added to definitions and stripped from responses
@@ -201,11 +209,14 @@ Native and custom tools work together: native tools execute server-side, custom 
 3. **Instructions are prepended** to a user message as `[Project instructions: ...]`
    - With client tools the proxy always injects into the **last** user message (so long sessions do not drop the protocol).
    - `instructions.injectInto` only applies when the request has no tools (`first` or `last`).
-4. **Lumo outputs tool calls** as one raw JSON line (fences still work if the model uses them):
-   ```
+4. **Lumo outputs tool calls** as JSON in a markdown `json` code block (the detector still accepts a raw line):
+
+   ````
    I'll check the weather for you.
+   ```json
    {"name": "user:get_weather", "arguments": {"city": "Paris"}}
    ```
+   ````
    *If Lumo misroutes the tool call through its native pipeline, lumo-tamer bounces it, after which Lumo will output JSON (hopefully). See [Misrouted Tool Calls](#misrouted-tool-calls).*
 5. **lumo-tamer detects and extracts** tool calls, strips the prefix, and returns in OpenAI format
 6. **Your client executes** the tool and sends results back

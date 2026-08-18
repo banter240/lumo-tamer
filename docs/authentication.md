@@ -6,15 +6,15 @@ Authenticating to Proton is not straightforward: different flows depending on us
 
 **Passwords are never logged or stored.** They are used only during the authentication handshake and immediately discarded.
 
-**Tokens are encrypted at rest.** All authentication data (access tokens, refresh tokens, key passwords) is stored in an AES-256-GCM encrypted vault (`sessions/vault.enc`). The encryption key is stored separately in your OS keychain (Linux: Secret Service/GNOME Keyring, macOS: Keychain, Windows: Credential Manager) or in a Docker secret file for headless environments.
+**Tokens are encrypted at rest.** All authentication data (access tokens, refresh tokens, key passwords) is stored in an AES-256-GCM encrypted vault (`sessions/vault.enc`). The encryption key is stored separately in your OS keychain (Linux: Secret Service/GNOME Keyring, macOS: Keychain, Windows: Credential Manager) or in a Docker secret file for headless environments. If there is no keychain and `auth.vault.keyFilePath` is missing, the first `/auth` login writes a 32-byte file there (mode 0600). Docker Compose still expects `secrets/lumo-vault-key` on the host because it mounts that path.
 
 ## Quick Start
 
 ```bash
 tamer auth
 # Select method:
-#   1. login   - Enter Proton credentials (recommended)
-#   2. browser - Extract from logged-in browser session
+#   1. browser - Open a window, log in, window closes (recommended)
+#   2. login   - Enter Proton credentials (needs Go)
 #   3. rclone  - Paste rclone config section
 ```
 
@@ -22,26 +22,23 @@ After successful authentication, `config.yaml` is updated with your selected met
 
 ---
 
-## Login (Recommended)
+## Login (`/auth` or `tamer auth login`)
 
-A secure and lightweight option where you provide your credentials. Requires Go. No support for CAPTCHA or conversation sync.
+Password login via Go SRP or the `/auth` page. Tries Lumo scope first (sync on). CAPTCHA falls back to Drive-scoped tokens (chat only). Proton 2028 (abuse lock) cannot retry that API; on a desktop a Chrome window opens instead.
 
 Uses Proton's SRP (Secure Remote Password) protocol via a Go binary built from [go-proton-api](https://github.com/henrybear327/go-proton-api).
 
 ### Why Login?
 
-- **No browser dependency**: Pure API-based authentication
+- **Lightweight default for Docker**: `/auth` needs no extra Chromium container
 - **Direct keyPassword access**: Derives the mailbox password needed for encryption
+- **Sync when Proton allows Lumo scope**: otherwise chat still works
 
 ### Setup
 
-1. Build the Go binary:
-   ```bash
-   # Requires Go 1.24+
-   npm run build:login # or npm run build:all
-   ```
-2. Run `tamer auth login`
-3. Enter username, password, and TOTP code (if 2FA is enabled).
+Desktop: `tamer auth login` (build the Go binary first with `npm run build:login`).
+
+Docker / Portainer: start only `tamer` and open `http://<host>:3003/auth`. Same form, no extra container. `GET /auth`, `POST /auth/login`, and `POST /auth/logout` do not need an API key. Login is limited to 5 attempts per IP per 10 minutes. Authenticator code uses `autocomplete=one-time-code` (Proton Pass / system 2FA). The page has a short “If login fails” list (CAPTCHA, 2028, Docker sidecar). After a successful login it shows **Lumo API Ready** and **lumo.proton.me** On / Off / Unavailable (capability × `conversations.enableSync`). Settings is `/config`. **Log out** signs out and leaves the server running so you can switch accounts.
 
 > **Tip:** If you hit a CAPTCHA, try logging in to Proton in any regular browser from the same IP first. This may clear the challenge for subsequent login attempts.
 
@@ -52,15 +49,17 @@ auth:
   method: login
   login:
     binaryPath: "./dist/proton-auth"
-    # Headers to help avoid CAPTCHA
+    # Used only after a Lumo-scoped attempt hits CAPTCHA (chat-only fallback)
     appVersion: "macos-drive@1.0.0-alpha.1+rclone"
     userAgent: "Mozilla/5.0 ..."
 ```
 
+The first SRP attempt uses Lumo's own app version (`web-lumo`). `login.appVersion` is the Drive fallback.
+
 ### Limitations
 
-- **CAPTCHA**: May trigger CAPTCHA on Proton's servers (see tip above)
-- **No conversation sync**: Cannot fetch userKeys/masterKeys due to API scope restrictions
+- **CAPTCHA**: May trigger CAPTCHA. We then retry without Lumo scope (chat only). Same-IP visit to lumo.proton.me usually clears it.
+- **2028 abuse lock**: Password API is blocked. Desktop opens a browser window; Docker needs the sidecar (see below).
 - **TOTP only**: Only supports TOTP for 2FA (no security keys)
 
 ### Troubleshooting
@@ -73,32 +72,59 @@ auth:
 - Check if 2FA is enabled (will prompt for TOTP)
 - Try browser method as fallback
 
+**Code 2028 / "unusual activity" / appeal-abuse**
+- Proton locked password API for this account/IP. Retrying `/auth/v4` will not help.
+- Desktop: tamer opens a Chrome window. Log in there; wait until `/auth` says logged in.
+- Docker: start the browser sidecar (see [Headless / Docker](#headless--docker)), log in at `:3001`, then `tamer auth browser`. Stop the sidecar afterwards.
+
 ---
 
 ## Browser
 
-Use a Chrome browser with remote debugging enabled to log in. Tokens will be extracted once. This is the only method that supports full conversation sync, and it lets you pass a CAPTCHA in the browser if needed.
+Default. `tamer auth` opens a window (system Chrome/Edge if present, otherwise Playwright Chromium), you log in to Lumo, tokens are saved, the window closes. No extra browser container to deploy or leave running.
 
-### Why Browser?
-
-- **Full conversation sync**: Only method that caches userKeys and masterKeys needed for conversation persistence
-- **Any 2FA method**: Works with TOTP, security keys, etc.
-- **CAPTCHA support**: Handle CAPTCHAs directly in the browser
+CAPTCHA and security keys work like in a normal browser. Sync works when cookies come from lumo.proton.me. `/auth` / password login also syncs if the Lumo-scoped SRP attempt succeeded.
 
 ### Setup
 
-1. Launch a browser with remote debugging:
-   - Use your own Chrome(-based) browser: `chrome --remote-debugging-port=9222`. You'll probably need to add more arguments, like `--user-data-dir=<custom dir> --remote-debugging-address=0.0.0.0 --remote-debugging-allowed-origins=*`. See [Chrome DevTools Protocol documentation](https://chromedevtools.github.io/devtools-protocol/) for more information.
-   - Or use the provided Docker image: `docker compose up lumo-tamer-browser` (access browser GUI at http://localhost:3001)
-2. Once the browser is running, log in to https://lumo.proton.me in it.
-3. Run `tamer auth browser`.
-4. Enter the CDP endpoint when prompted (ie. `http://localhost:9222`, or `http://browser:9222` when using both  `lumo-tamer` and `lumo-tamer-browser` docker containers).
+```bash
+tamer auth
+# or: tamer auth browser
+```
+
+Log in in the window that opens. When you reach the Lumo chat, extraction runs and the window closes.
+
+Cookies live in `sessions/browser-profile` (small). The browser binary is whatever is already on the machine.
+
+### Headless / Docker
+
+Start only `tamer` and open `http://<host>:3003/auth`. Type Proton email, password, and 2FA. The server starts without a vault; chat returns 503 until this page succeeds.
+
+`/auth` uses password SRP (Lumo scope when Proton allows it). CAPTCHA retries Drive (chat only). Code 2028 (abuse lock) cannot be retried on the same API; on a **desktop** tamer then opens a normal Chrome window. Inside Docker that window is invisible, so you start the optional sidecar yourself.
+
+The sidecar is a full Chromium+noVNC image (~1 GB). That is a lot just for authentication. Compose keeps it behind `--profile browser` so a normal `up` does not start it. Tamer does not start Compose for you.
+
+```yaml
+auth:
+  method: browser
+  browser:
+    launch: false
+    cdpEndpoint: "http://browser:9222"
+```
+
+```bash
+docker compose --profile browser up -d browser
+# http://<host>:3001  -> log in at lumo.proton.me (CAPTCHA and security keys work)
+docker compose run --rm tamer auth browser   # when prompted: http://browser:9222
+docker compose --profile browser stop browser
+```
+
+Log in at `:3001`, then extract. Stop the sidecar when the vault exists. Do not leave it running.
 
 ### Limitations
 
-- **CDP setup complexity**: Setting up Chrome DevTools Protocol can be tricky: getting the right command-line arguments, network access, and port forwarding to work may take some time.
-- **Browser needed again on token expiry**: If tokens can't be refreshed (e.g. session revoked), you need a running browser to re-authenticate.
-- **Docker container size**: The provided Docker browser container is ~1 GB, which is a lot just for authentication.
+- **Needs a display** for `launch: true` (normal desktop). Headless servers use CDP or `login`.
+- **Re-auth**: if the refresh token is revoked, run `tamer auth` again (window opens; profile may still be logged in).
 
 ### Config
 
@@ -190,20 +216,20 @@ client_salted_key_pass = base64encodedKeyPassword==
 
 | Feature | Login | Browser | Rclone |
 |---------|-------|---------|--------|
-| Conversation sync | No | Yes | No |
+| Conversation sync | Yes (Lumo-scoped SRP; CAPTCHA falls back to no) | Yes | No |
 | keyPassword | Yes | Yes | Yes |
 | Token refresh | Automatic | Automatic | Automatic |
 | 2FA support | TOTP only | Any | Any (via rclone) |
 | CAPTCHA handling | May fail | Browser handles | rclone handles |
-| Extra tools needed | Go binary | Browser + CDP | rclone |
+| Extra tools needed | Go binary (in the Docker image) | Desktop window, or Docker sidecar | rclone |
 | Setup complexity | Medium | Medium | Low |
 
 ### Conversation Sync
 
-Only **browser** auth supports conversation sync because:
-- Browser tokens have full API scope (including `/lumo/*` endpoints)
-- Browser extraction caches `userKeys` and `masterKeys` which bypass scope checks
-- Login and rclone tokens lack the `lumo` scope needed for the spaces API
+Conversation sync needs a session with Lumo API scope plus real Proton keys:
+- **Browser**: always (cookies from lumo.proton.me)
+- **Login / `/auth`**: tries `web-lumo` first and fetches `userKeys` + `masterKeys`. CAPTCHA falls back to Drive-scoped tokens (chat only)
+- **Rclone**: no Lumo scope
 
 ---
 
@@ -228,7 +254,7 @@ All methods store a `refreshToken` and use Proton's `/auth/refresh` endpoint:
 ### Manual Refresh
 
 - **CLI command**: `/refreshtokens`
-- **API**: `POST /v1/auth/refresh`
+- **API**: `POST /v1/auth/refresh` (needs the server API key, like the other `/v1/auth/*` routes. `/auth` and `/auth/*` do not.)
 
 ### Troubleshooting
 
@@ -256,12 +282,15 @@ Shows:
 
 ## Logout
 
-Use the `/logout` command in any chat (CLI or API).
+**`/auth` page (or `POST /auth/logout`):** no API key. Revokes Proton, deletes the vault, and **keeps the server running** so you can log in as someone else.
+
+**Chat `/logout`, or `POST /v1/auth/logout` (needs the server API key):** same revoke + delete, then **exits the process**. Docker `restart: unless-stopped` brings it back; a hand-started process you start again.
 
 ```bash
-# API
+# Switch account — server stays up
+curl -X POST http://localhost:3003/auth/logout
+
+# API / chat — process exits
 curl -X POST http://localhost:3003/v1/auth/logout \
   -H "Authorization: Bearer your-api-key"
 ```
-
-This revokes the session on Proton's servers and deletes the local token cache.

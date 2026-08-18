@@ -53,7 +53,7 @@ cli:
       # Note: if disabled, Lumo can still ask to read files using shell tools (e.g., cat)
       enabled: true
       # Max file size. Files larger than this are skipped with an error.
-      maxFileSize: "512kb"
+      maxFileSize: "360kb"
 ```
 
 ### Code Executors
@@ -197,9 +197,9 @@ Only languages configured in `executors` are allowed.
 
 | File | Purpose |
 |------|---------|
-| `src/cli/code-block-detector.ts` | Detects code blocks in streaming response |
-| `src/cli/block-handlers.ts` | Handler registry and base class |
-| `src/cli/handlers/file-reader.ts` | `read` block handler |
-| `src/cli/handlers/edit-applier.ts` | `edit` block handler |
-| `src/cli/handlers/file-creator.ts` | `create` block handler |
-| `src/cli/handlers/code-executor.ts` | Code execution handler |
+| `src/cli/local-actions/code-block-detector.ts` | Detects code blocks in streaming response |
+| `src/cli/local-actions/block-handlers.ts` | Handler registry |
+| `src/cli/local-actions/file-reader.ts` | `read` block handler |
+| `src/cli/local-actions/edit-applier.ts` | `edit` block handler |
+| `src/cli/local-actions/file-creator.ts` | `create` block handler |
+| `src/cli/local-actions/code-executor.ts` | Code execution handler |
