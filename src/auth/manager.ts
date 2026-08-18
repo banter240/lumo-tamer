@@ -95,12 +95,7 @@ export class AuthManager {
         this.refreshTimer = setInterval(async () => {
             try {
                 await this.refreshNow();
-                this.lastRefreshFailure = null;
-                this.consecutiveFailures = 0;
             } catch (error) {
-                const message = error instanceof Error ? error.message : String(error);
-                this.lastRefreshFailure = { at: new Date().toISOString(), error: message };
-                this.consecutiveFailures++;
                 logger.error({ error, consecutiveFailures: this.consecutiveFailures }, 'Scheduled token refresh failed');
             }
         }, intervalMs);
@@ -150,6 +145,13 @@ export class AuthManager {
             }
 
             logger.info({ method: this.provider.method }, 'Token refresh complete');
+            this.lastRefreshFailure = null;
+            this.consecutiveFailures = 0;
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            this.lastRefreshFailure = { at: new Date().toISOString(), error: message };
+            this.consecutiveFailures++;
+            throw error;
         } finally {
             this.isRefreshing = false;
         }
@@ -161,26 +163,20 @@ export class AuthManager {
     private async handleAuthError(): Promise<{ uid: string; accessToken: string } | null> {
         try {
             await this.refreshNow();
-            this.lastRefreshFailure = null;
-            this.consecutiveFailures = 0;
             return {
                 uid: this.provider.getUid(),
                 accessToken: this.getAccessToken(),
             };
         } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            this.lastRefreshFailure = { at: new Date().toISOString(), error: message };
-            this.consecutiveFailures++;
             logger.error({ error, consecutiveFailures: this.consecutiveFailures }, 'Failed to refresh tokens after 401');
             return null;
         }
     }
 
     /**
-     * Return combined health info for the /health endpoint.
-     * /health is unauthenticated, so keep this free of secrets.
-     * lastRefreshFailure.error is a raw Error.message — if Proton ever
-     * includes token fragments in error responses, that would leak here.
+     * Combined health info for GET /health.
+     * Unauthenticated: no tokens. lastRefreshFailure.error is Error.message —
+     * if Proton ever put a token fragment in that string, it would leak here.
      */
     getHealth() {
         const status = this.provider.getStatus();

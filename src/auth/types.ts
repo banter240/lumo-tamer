@@ -94,7 +94,7 @@ export interface IAuthProvider {
 
     /**
      * Whether sync to Proton servers is supported.
-     * Only browser auth has the lumo scope needed for spaces API.
+     * True for browser sessions and for login that got real Proton keys.
      */
     supportsFullApi(): boolean;
 

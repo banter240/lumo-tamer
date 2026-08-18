@@ -14,12 +14,12 @@
 
 import { existsSync } from 'fs';
 import { logger } from '../../app/logger.js';
-import { authConfig, getConversationsConfig } from '../../app/config.js';
-import { resolveProjectPath } from '../../app/paths.js';
+import { getConversationsConfig } from '../../app/config.js';
 import { createProtonApi } from '../api-factory.js';
 import { refreshWithRefreshToken, canRefreshWithToken } from '../token-refresh.js';
-import { readVault, writeVault } from '../vault/index.js';
+import { readVault, writeVault, configuredVault } from '../vault/index.js';
 import type { VaultKeyConfig } from '../vault/index.js';
+import { hasProtonSyncKeys } from '../sync-capability.js';
 import type {
     IAuthProvider,
     AuthProviderStatus,
@@ -39,13 +39,7 @@ export interface ProviderConfig {
  * Get provider config from authConfig.
  */
 export function getProviderConfig(): ProviderConfig {
-    return {
-        vaultPath: resolveProjectPath(authConfig.vault.path),
-        keyConfig: {
-            keychain: authConfig.vault.keychain,
-            keyFilePath: authConfig.vault.keyFilePath,
-        },
-    };
+    return configuredVault();
 }
 
 // Factory function type for creating browser provider (avoids circular import)
@@ -278,10 +272,14 @@ export class AuthProvider implements IAuthProvider {
 
     /**
      * Check if full API access is supported. (lumo/v1/ endpoints)
-     * Only browser auth has the lumo scope needed
+     * Browser sessions always have lumo scope. Login does too when we
+     * obtained real Proton keys (Lumo-scoped SRP succeeded).
      */
     supportsFullApi(): boolean {
-        return this.method === 'browser';
+        if (this.method === 'browser') {
+            return true;
+        }
+        return hasProtonSyncKeys(this.tokens);
     }
 
     /**
@@ -327,7 +325,7 @@ export class AuthProvider implements IAuthProvider {
         }
 
         if (!this.supportsFullApi()) {
-            return 'Conversation sync disabled: requires browser auth. Conversations will NOT sync to Proton. Run "tamer auth browser" to enable.';
+            return 'Conversation sync disabled: this session has no Lumo API scope. Log in again at /auth or with tamer auth.';
         }
 
         if (!this.tokens.keyPassword) {

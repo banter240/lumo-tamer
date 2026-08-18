@@ -8,10 +8,8 @@
 
 import * as readline from 'readline';
 import { parseRcloneSection } from './parser.js';
-import { authConfig } from '../../app/config.js';
 import { logger } from '../../app/logger.js';
-import { resolveProjectPath } from '../../app/paths.js';
-import { readVault, writeVault, type VaultKeyConfig } from '../vault/index.js';
+import { readVault, writeVault, configuredVault } from '../vault/index.js';
 import type { StoredTokens } from '../types.js';
 import { print } from '../../app/terminal.js';
 
@@ -66,11 +64,7 @@ export async function runRcloneAuthentication(): Promise<void> {
     // Parse the pasted content
     const rcloneTokens = parseRcloneSection(content);
 
-    const vaultPath = resolveProjectPath(authConfig.vault.path);
-    const keyConfig: VaultKeyConfig = {
-        keychain: authConfig.vault.keychain,
-        keyFilePath: authConfig.vault.keyFilePath,
-    };
+    const { vaultPath, keyConfig } = configuredVault();
 
     // Try to load existing vault to preserve sync data
     let existingTokens: Partial<StoredTokens> = {};

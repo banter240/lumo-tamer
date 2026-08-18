@@ -1,9 +1,7 @@
 /**
  * Fetch user and master keys using an authenticated ProtonApi.
- * Not used at the moment:
- * - Browser provider handles this differently (via browser context).
- * - SRP and Rclone providers cannot use this due to scope limitations
- *   (no scope 'lumo' for lumo/v1/masterkeys)
+ * Used after password login when SRP was done as web-lumo (Lumo scope).
+ * Browser auth still extracts keys via the page context instead.
  */
 import { logger } from '../app/logger.js';
 import type { ProtonApi, CachedUserKey, CachedMasterKey } from './types.js';

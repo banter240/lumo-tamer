@@ -23,6 +23,28 @@ describe('createProtonApi error handling', () => {
         });
     });
 
+    it('uses OpenAI-shaped error.message as the thrown Error message', async () => {
+        const bodyText = JSON.stringify({
+            error: {
+                message: 'This model\'s maximum context length is 131072 tokens.',
+                type: 'invalid_request_error',
+                code: 'context_length_exceeded',
+            },
+        });
+        vi.stubGlobal('fetch', vi.fn(async () =>
+            new Response(bodyText, { status: 400, statusText: 'Bad Request' })));
+
+        const api = createProtonApi({ uid: 'u', accessToken: 't' });
+
+        await expect(
+            api({ url: 'ai/v1/chat/completions', method: 'post', data: { model: 'lumo-max', messages: [] } })
+        ).rejects.toMatchObject({
+            message: 'This model\'s maximum context length is 131072 tokens.',
+            status: 400,
+            body: bodyText,
+        });
+    });
+
     it('falls back to status text and keeps the raw body when not JSON', async () => {
         vi.stubGlobal('fetch', vi.fn(async () =>
             new Response('gateway boom', { status: 502, statusText: 'Bad Gateway' })));

@@ -2,6 +2,7 @@ import pino from 'pino';
 import type { LogConfig } from './config.js';
 import { resolveProjectPath } from './paths.js';
 import { installConsoleShim } from '../shims/console.js';
+import { redactLogArgs } from './log-redact.js';
 
 // Determine transport based on config
 function getTransport(config: LogConfig): pino.TransportSingleOptions | pino.TransportMultiOptions {
@@ -51,6 +52,11 @@ export function createLogger(config: LogConfig): pino.Logger {
     // Pino only auto-serializes the `err` key, so we register the same
     // serializer for `error` to get proper message/stack extraction.
     serializers: { error: pino.stdSerializers.err },
+    hooks: {
+      logMethod(inputArgs, method) {
+        method.apply(this, redactLogArgs(inputArgs as unknown[]) as Parameters<typeof method>);
+      },
+    },
   });
 }
 

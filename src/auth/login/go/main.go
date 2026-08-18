@@ -38,9 +38,16 @@ func main() {
 	outputPath := flag.String("o", "", "Output file path (if not specified, outputs to stdout)")
 	appVersion := flag.String("app-version", defaultAppVersion, "X-PM-AppVersion header value")
 	userAgent := flag.String("user-agent", defaultUserAgent, "User-Agent header value")
+	usernameFlag := flag.String("username", "", "Proton username (or PROTON_USERNAME)")
+	passwordFlag := flag.String("password", "", "Proton password (prefer PROTON_PASSWORD)")
+	totpFlag := flag.String("totp", "", "TOTP code (or PROTON_TOTP)")
 	flag.Parse()
 
-	result := authenticate(*appVersion, *userAgent)
+	username := firstNonEmpty(*usernameFlag, os.Getenv("PROTON_USERNAME"))
+	password := firstNonEmpty(*passwordFlag, os.Getenv("PROTON_PASSWORD"))
+	totp := firstNonEmpty(*totpFlag, os.Getenv("PROTON_TOTP"))
+
+	result := authenticate(*appVersion, *userAgent, username, password, totp)
 
 	// Output JSON
 	output, _ := json.MarshalIndent(result, "", "  ")
@@ -61,25 +68,36 @@ func main() {
 	}
 }
 
-func authenticate(appVersion, userAgent string) AuthResult {
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func authenticate(appVersion, userAgent, username, password, totp string) AuthResult {
 	reader := bufio.NewReader(os.Stdin)
 
-	// Prompt for username
-	fmt.Fprint(os.Stderr, "Proton username (email): ")
-	username, err := reader.ReadString('\n')
-	if err != nil {
-		return AuthResult{Error: "Failed to read username", ErrorCode: 1000}
+	if username == "" {
+		fmt.Fprint(os.Stderr, "Proton username (email): ")
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return AuthResult{Error: "Failed to read username", ErrorCode: 1000}
+		}
+		username = strings.TrimSpace(line)
 	}
-	username = strings.TrimSpace(username)
 
-	// Prompt for password (hidden input)
-	fmt.Fprint(os.Stderr, "Password: ")
-	passwordBytes, err := term.ReadPassword(int(syscall.Stdin))
-	fmt.Fprintln(os.Stderr) // newline after password
-	if err != nil {
-		return AuthResult{Error: "Failed to read password", ErrorCode: 1000}
+	if password == "" {
+		fmt.Fprint(os.Stderr, "Password: ")
+		passwordBytes, err := term.ReadPassword(int(syscall.Stdin))
+		fmt.Fprintln(os.Stderr) // newline after password
+		if err != nil {
+			return AuthResult{Error: "Failed to read password", ErrorCode: 1000}
+		}
+		password = string(passwordBytes)
 	}
-	password := string(passwordBytes)
 
 	// Create Proton API manager
 	// Use default host URL (https://mail.proton.me/api) - don't override it
@@ -103,12 +121,17 @@ func authenticate(appVersion, userAgent string) AuthResult {
 
 	// Check if 2FA is required
 	if auth.TwoFA.Enabled != 0 {
-		fmt.Fprint(os.Stderr, "2FA TOTP code: ")
-		totp, err := reader.ReadString('\n')
-		if err != nil {
-			return AuthResult{Error: "Failed to read TOTP", ErrorCode: 1002}
+		if totp == "" {
+			fmt.Fprint(os.Stderr, "2FA TOTP code: ")
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				return AuthResult{Error: "Failed to read TOTP", ErrorCode: 1002}
+			}
+			totp = strings.TrimSpace(line)
 		}
-		totp = strings.TrimSpace(totp)
+		if totp == "" {
+			return AuthResult{Error: "2FA required", ErrorCode: 1002}
+		}
 
 		err = client.Auth2FA(ctx, proton.Auth2FAReq{TwoFactorCode: totp})
 		if err != nil {

@@ -9,6 +9,28 @@ import { APP_VERSION_HEADER } from '@lumo/config.js';
 import { PROTON_URLS } from '../app/urls.js';
 import { logger } from '../app/logger.js';
 import { getMetrics } from '../app/metrics.js';
+import { dumpProtonApiCall } from '../app/api-dump.js';
+
+function decodeProtonErrorBody(errorBody: string): {
+    message?: string;
+    Code?: number;
+    data?: unknown;
+} {
+    try {
+        const data = JSON.parse(errorBody) as {
+            Error?: string;
+            Code?: number;
+            error?: { message?: string };
+        };
+        return {
+            data,
+            message: data.Error || data.error?.message,
+            Code: data.Code,
+        };
+    } catch {
+        return {};
+    }
+}
 
 export interface ApiFactoryOptions {
     uid: string;
@@ -127,26 +149,33 @@ export function createProtonApi(options: ApiFactoryOptions): ProtonApi {
 
         if (!response.ok) {
             const errorBody = await response.text().catch(() => '');
-            // Try to extract Proton's error message from JSON response
-            let protonError: string | undefined;
-            let protonCode: number | undefined;
-            let parsedBody: unknown;
-            try {
-                parsedBody = JSON.parse(errorBody);
-                protonError = (parsedBody as { Error?: string }).Error;
-                protonCode = (parsedBody as { Code?: number }).Code;
-            } catch { /* not JSON */ }
-
+            const decoded = decodeProtonErrorBody(errorBody);
             const error = new Error(
-                protonError
+                decoded.message
                     || `API error: ${response.status} ${response.statusText}`
-            );
-            // Preserve full error context so callers (e.g. the chat/completions
-            // terminal-error decoder) can inspect the Proton response body.
-            (error as ProtonApiError).status = response.status;
-            (error as ProtonApiError).Code = protonCode;
-            (error as ProtonApiError).data = parsedBody;
-            (error as ProtonApiError).body = errorBody;
+            ) as ProtonApiError;
+            error.status = response.status;
+            error.Code = decoded.Code;
+            error.data = decoded.data;
+            error.body = errorBody;
+
+            const messages = data && typeof data === 'object'
+                ? (data as { messages?: unknown; model?: unknown }).messages
+                : undefined;
+            logger.error({
+                error,
+                url,
+                method: method.toUpperCase(),
+                model: data && typeof data === 'object' ? (data as { model?: unknown }).model : undefined,
+                messageCount: Array.isArray(messages) ? messages.length : undefined,
+            }, 'Proton API error');
+            dumpProtonApiCall({
+                method: method.toUpperCase(),
+                url,
+                status: response.status,
+                request: data,
+                response: decoded.data ?? errorBody,
+            });
             throw error;
         }
 
@@ -154,10 +183,25 @@ export function createProtonApi(options: ApiFactoryOptions): ProtonApi {
             if (!response.body) {
                 throw new Error('Expected streaming response but got no body');
             }
+            dumpProtonApiCall({
+                method: method.toUpperCase(),
+                url,
+                status: response.status,
+                request: data,
+                stream: true,
+            });
             return response.body;
         }
 
-        return response.json();
+        const json = await response.json();
+        dumpProtonApiCall({
+            method: method.toUpperCase(),
+            url,
+            status: response.status,
+            request: data,
+            response: json,
+        });
+        return json;
     } as ProtonApi & { updateCredentials: typeof updateCredentials };
 
     // Attach updateCredentials method

@@ -9,6 +9,7 @@ export {
     decryptVaultToJson,
     isEncryptedVault,
     ensureVaultKey,
+    configuredVault,
     type VaultConfig,
 } from './vault.js';
 
@@ -16,6 +17,7 @@ export {
     getVaultKey,
     setVaultKey,
     generateVaultKey,
+    writeNewKeyFile,
     deleteVaultKey,
     getKeySource,
     isKeychainAvailable,
