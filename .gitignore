@@ -9,3 +9,21 @@ secrets/
 browser-data/
 coverage/
 *.pid
+.env
+.env.*
+!.env.example
+
+# Editor
+.vscode/
+.idea/
+.cursor/
+
+# Local debug home (LUMO_HOME=.local)
+.local/
+
+# AI Workspace (private, via ai-core)
+dev
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+GROK.md

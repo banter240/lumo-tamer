@@ -1,6 +1,6 @@
 import pino from 'pino';
 import type { LogConfig } from './config.js';
-import { resolveProjectPath } from './paths.js';
+import { resolveDataPath } from './paths.js';
 import { installConsoleShim } from '../shims/console.js';
 import { redactLogArgs } from './log-redact.js';
 
@@ -12,7 +12,7 @@ function getTransport(config: LogConfig): pino.TransportSingleOptions | pino.Tra
         {
           target: 'pino/file',
           options: {
-            destination: resolveProjectPath(config.filePath),
+            destination: resolveDataPath(config.filePath),
             mkdir: true,
           },
         },

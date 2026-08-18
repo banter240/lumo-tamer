@@ -10,7 +10,7 @@
 
 import { existsSync, statSync, readFileSync, writeFileSync } from 'fs';
 import { parseDocument, parse, Document } from 'yaml';
-import { resolveProjectPath } from './paths.js';
+import { resolveProjectPath, resolveDataPath } from './paths.js';
 
 /**
  * Exit with a fatal error message.
@@ -46,7 +46,7 @@ export interface ConfigFileStatus {
 }
 
 export function getConfigPath(): string {
-  return resolveProjectPath('config.yaml');
+  return resolveDataPath('config.yaml');
 }
 
 /**

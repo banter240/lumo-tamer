@@ -15,6 +15,7 @@ function mergeConfigLayers(...sources: unknown[]): Record<string, unknown> {
 }
 import bytes from 'bytes';
 import { fatalExit, loadConfigYaml, loadDefaultsYaml } from './config-file.js';
+import { isDefaultTierAllowed } from '../lumo-client/model-tier.js';
 
 // Load defaults from YAML (single source of truth)
 const configDefaults = loadDefaultsYaml();
@@ -34,6 +35,7 @@ const logConfigSchema = z.object({
   target: z.enum(['stdout', 'file']),
   filePath: z.string(),
   messageContent: z.boolean(),
+  dumpApiPath: z.string(),
 });
 
 
@@ -86,6 +88,10 @@ const serverInstructionsConfigSchema = z.object({
   forTools: z.string(),
   fallback: z.string(),
   forToolBounce: z.string(),
+  forJsonFormat: z.string(),
+  forToolRequired: z.string(),
+  forToolNamed: z.string(),
+  forToolsCompact: z.string(),
   replacePatterns: z.array(replacePatternSchema),
 });
 
@@ -117,6 +123,8 @@ const authConfigSchema = z.object({
     onError: z.boolean(),
   }),
   browser: z.object({
+    launch: z.boolean(),
+    userDataDir: z.string(),
     cdpEndpoint: z.string(),
   }),
   login: z.object({
@@ -126,13 +134,21 @@ const authConfigSchema = z.object({
   }),
 });
 
-// Server merged config schema
-const serverMergedConfigSchema = z.object({
+const commandsConfigSchema = z.object({ enabled: z.boolean(), wakeword: z.string() });
+const imagesConfigSchema = z.object({ maxInputBytes: byteSizeSchema });
+
+const sharedMergedFields = {
   auth: authConfigSchema,
   log: logConfigSchema,
   conversations: conversationsConfigSchema,
-  commands: z.object({ enabled: z.boolean(), wakeword: z.string() }),
+  commands: commandsConfigSchema,
   enableWebSearch: z.boolean(),
+  enableImageTools: z.boolean(),
+  images: imagesConfigSchema,
+};
+
+const serverMergedConfigSchema = z.object({
+  ...sharedMergedFields,
   customTools: customToolsConfigSchema,
   instructions: serverInstructionsConfigSchema,
   metrics: metricsConfigSchema,
@@ -142,19 +158,22 @@ const serverMergedConfigSchema = z.object({
   apiModelName: z.string().min(1),
   defaultModelTier: z.enum(['auto', 'lumo-lite', 'lumo-max']),
   allowedModels: z.array(z.string().min(1)).min(1),
+  extraModels: z.array(z.object({
+    id: z.string().min(1),
+    model: z.enum(['lumo', 'lumo-lite', 'lumo-max', 'auto']),
+    reasoning: z.enum(['none', 'high']).optional(),
+  })),
   reasoning: z.object({
     default: z.enum(['none', 'high']),
     surfaceThinking: z.boolean(),
   }),
-});
+}).refine(
+  (cfg) => isDefaultTierAllowed(cfg.defaultModelTier, cfg.allowedModels),
+  { message: 'defaultModelTier must be in allowedModels or "auto"', path: ['defaultModelTier'] },
+);
 
-// CLI merged config schema
 const cliMergedConfigSchema = z.object({
-  auth: authConfigSchema,
-  log: logConfigSchema,
-  conversations: conversationsConfigSchema,
-  commands: z.object({ enabled: z.boolean(), wakeword: z.string() }),
-  enableWebSearch: z.boolean(),
+  ...sharedMergedFields,
   localActions: localActionsConfigSchema,
   instructions: cliInstructionsConfigSchema,
 });
@@ -210,6 +229,21 @@ function loadMergedConfig(mode: ConfigMode): MergedConfig {
   }
 }
 
+/** Validate a user config.yaml object as the server would. Throws ZodError. */
+export function parseServerUserConfig(userConfig: Record<string, unknown>): void {
+  const defaultModeConfig = (configDefaults.server ?? {}) as Record<string, unknown>;
+  const userModeConfig = userConfig.server as Record<string, unknown> | undefined;
+  const merged = mergeConfigLayers(configDefaults, defaultModeConfig, userConfig, userModeConfig);
+  for (const key of SHARED_KEYS) {
+    if (userModeConfig?.[key]) {
+      merged[key] = mergeConfigLayers(merged[key], userModeConfig[key]);
+    }
+  }
+  delete merged.server;
+  delete merged.cli;
+  serverMergedConfigSchema.parse(merged);
+}
+
 // ============================================
 // State
 // ============================================
@@ -248,6 +282,13 @@ export const getLogConfig = () => getConfig().log;
 export const getConversationsConfig = () => getConfig().conversations;
 export const getCommandsConfig = () => getConfig().commands;
 export const getEnableWebSearch = () => getConfig().enableWebSearch;
+export const getEnableImageTools = () => getConfig().enableImageTools;
+
+export function getImagesMaxBytes(): number {
+  const raw = getConfig().images.maxInputBytes;
+  if (typeof raw === 'number') return raw;
+  return bytes.parse(raw) ?? 4 * 1024 * 1024;
+}
 
 // Server-specific getters
 export function getServerConfig(): ServerMergedConfig {
@@ -315,7 +356,7 @@ export const authConfig = ((): z.infer<typeof authConfigSchema> => {
 // Mock config (eagerly loaded, needed before initConfig to decide auth vs mock)
 const mockConfigSchema = z.object({
   enabled: z.boolean(),
-  scenario: z.enum(['success', 'error', 'timeout', 'rejected', 'toolCall', 'misroutedToolCall', 'weeklyLimit', 'cycle']),
+  scenario: z.enum(['success', 'error', 'timeout', 'rejected', 'toolCall', 'misroutedToolCall', 'historyToolEcho', 'weeklyLimit', 'cycle']),
 });
 
 export const mockConfig = ((): z.infer<typeof mockConfigSchema> => {

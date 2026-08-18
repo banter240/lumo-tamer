@@ -13,13 +13,13 @@ import fs from 'fs';
 import indexeddbshim from 'indexeddbshim';
 
 import { getConversationsConfig } from '../app/config.js';
-import { resolveProjectPath } from '../app/paths.js';
+import { resolveDataPath } from '../app/paths.js';
 
 
 const config = getConversationsConfig();
 
 // databaseBasePath - where SQLite files are stored (resolved to absolute path)
-const databaseBasePath = resolveProjectPath(config.databasePath);
+const databaseBasePath = resolveDataPath(config.databasePath);
 
 // Verify databaseBasePath is a writable directory
 try {

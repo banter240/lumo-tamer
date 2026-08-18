@@ -13,6 +13,7 @@ import type { KeyManager } from '../../key-manager.js';
 import { Role, type Status } from '@lumo/types.js';
 import type { ConversationState, Message, SpaceId, RemoteId, MessagePrivate } from '../../types.js';
 import { SpaceManager } from './space-manager.js';
+import { isConversationPrivate } from '../../privacy.js';
 
 // Role mapping: our internal roles to API integer values
 const RoleToInt: Record<Role, number> = {
@@ -149,6 +150,10 @@ export class SyncService {
             return false;
         }
 
+        if (conversation.private || isConversationPrivate(conversationId)) {
+            logger.debug({ conversationId }, 'Skipping private conversation');
+            return false;
+        }
         if (!conversation.dirty) {
             logger.info({ conversationId }, 'Conversation already synced');
             return true;

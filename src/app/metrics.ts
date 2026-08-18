@@ -41,6 +41,9 @@ export class MetricsService {
   // Auth metrics
   readonly authFailuresTotal: Counter;
 
+  // Lumo completion metrics
+  readonly lumoCompletionsTotal: Counter;
+
   // Proton API metrics
   readonly protonApiRequestsTotal: Counter;
   readonly protonApiRequestDuration: Histogram;
@@ -140,6 +143,13 @@ export class MetricsService {
     this.authFailuresTotal = new Counter({
       name: `${prefix}auth_failures_total`,
       help: 'Authentication failures',
+      registers: [this.registry],
+    });
+
+    this.lumoCompletionsTotal = new Counter({
+      name: `${prefix}lumo_completions_total`,
+      help: 'Lumo completions by billed tier and whether thinking was on',
+      labelNames: ['tier', 'reasoning'],
       registers: [this.registry],
     });
 

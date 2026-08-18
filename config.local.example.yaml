@@ -1,0 +1,35 @@
+# Local debug overlay. Copy to .local/config.yaml (gitignored).
+#
+#   mkdir -p .local
+#   cp config.local.example.yaml .local/config.yaml
+#   LUMO_HOME=.local npm run dev:server
+#
+# Open http://127.0.0.1:3003/auth once for live Lumo.
+# Logs: .local/lumo-tamer.log
+
+auth:
+  method: browser
+  vault:
+    # Local file when the OS keychain is missing. Create with: openssl rand 32 > .local/vault-key
+    keyFilePath: ".local/vault-key"
+
+log:
+  level: debug
+  target: file
+  filePath: lumo-tamer.log
+  # Keep off so prompts/emails never hit the log I grep.
+  messageContent: false
+  dumpApiPath: ""
+
+server:
+  port: 3003
+  apiKey: "local-dev-key"
+  customTools:
+    enabled: true
+
+# true = no Proton, replay mock streams (historyToolEcho = Done-read leak).
+# false = real Lumo after /auth.
+test:
+  mock:
+    enabled: true
+    scenario: historyToolEcho

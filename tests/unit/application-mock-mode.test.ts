@@ -21,5 +21,6 @@ describe('Application.initializeMock()', () => {
     const app = await Application.create();
     expect(() => app.getConversationStore()).not.toThrow();
     expect(app.getConversationStore()).toBeDefined();
+    expect(app.isAuthenticated()).toBe(true);
   });
 });

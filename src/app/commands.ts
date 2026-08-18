@@ -4,8 +4,9 @@
  */
 
 import { logger } from './logger.js';
-import { getCommandsConfig } from './config.js';
+import { getCommandsConfig, getConversationsConfig } from './config.js';
 import { getSyncService, getConversationStore, getAutoSyncService } from '../conversations/index.js';
+import { markConversationPrivate, isConversationPrivate } from '../conversations/privacy.js';
 import type { AuthManager } from '../auth/index.js';
 import type { Turn } from '../lumo-client/index.js';
 
@@ -122,9 +123,11 @@ export async function executeCommand(
       case 'new':
       case 'clear':
       case 'reset':
-      case 'private':
       case 'open':
         return `Command /${lowerCommand} is not available.`;
+
+      case 'private':
+        return handlePrivateCommand(context);
 
       default:
         logger.warn(`Unknown command: /${commandName}`);
@@ -145,6 +148,7 @@ function getHelpText(): string {
   /load <id>         - Load a conversation from Proton by ID
   /refreshtokens     - Manually refresh auth tokens
   /logout            - Revoke session and delete tokens
+  /private           - Keep this conversation local (do not sync)
   /quit              - Exit CLI (CLI mode only)${wakewordHint}`;
 }
 
@@ -153,6 +157,25 @@ function getHelpText(): string {
  *
  * Inspired by WebClients ConversationHeader.tsx title editing
  */
+function handlePrivateCommand(context?: CommandContext): string {
+  if (!context?.conversationId) {
+    return 'No active conversation to mark private.';
+  }
+  markConversationPrivate(context.conversationId);
+  try {
+    const store = getConversationStore();
+    if (store && 'markPrivate' in store && typeof store.markPrivate === 'function') {
+      store.markPrivate(context.conversationId);
+    }
+  } catch {
+    // Store not up yet; the in-memory flag is enough to skip sync.
+  }
+  if (!getConversationsConfig().enableSync) {
+    return 'Sync is already off. Marked this conversation private anyway.';
+  }
+  return 'This conversation will stay local and will not sync to Proton.';
+}
+
 function handleTitleCommand(params: string, context?: CommandContext): string {
   if (!params.trim()) {
     return 'Usage: /title <new title>';
@@ -186,6 +209,10 @@ async function handleSaveCommand(params: string, context?: CommandContext): Prom
     const store = getConversationStore();
     let conversationId = context?.conversationId;
     let wasCreated = false;
+
+    if (conversationId && isConversationPrivate(conversationId)) {
+      return 'This conversation is private and will not sync.';
+    }
 
     // Handle stateless requests - create conversation from turns
     if (!conversationId) {

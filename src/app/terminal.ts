@@ -27,7 +27,8 @@ Commands:
   server                     Start OpenAI-compatible API server
 
 Options:
-  -h, --help    Show help
+  -h, --help         Show help
+  --home <dir>       User data dir (config, vault, sessions). Or set LUMO_HOME.
 
 `);
 }
@@ -43,8 +44,8 @@ Usage:
   tamer auth --help          Show this help
 
 Methods:
-  login                      Enter Proton credentials
-  browser                    Extract tokens from logged-in browser session
+  browser                    Open a window, log in to Lumo, window closes
+  login                      Enter Proton credentials (needs Go)
   rclone                     Paste rclone config section
 
 `);

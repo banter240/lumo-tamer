@@ -16,9 +16,11 @@ import type { Application } from '../app/index.js';
 import { randomUUID } from 'crypto';
 import * as readline from 'readline';
 import type { AssistantMessageData } from '../lumo-client/index.js';
+import { redactGeneratedImages } from '../lumo-client/images.js';
 import { blockHandlers, executeBlocks, formatResultsMessage } from './local-actions/block-handlers.js';
 import { CodeBlockDetector, type CodeBlock } from './local-actions/code-block-detector.js';
 import { buildCliInstructions } from './message-converter.js';
+import { createLinePrompt } from './prompt.js';
 
 interface LumoResponse {
   /** Assistant message data ready for persistence */
@@ -71,10 +73,10 @@ export class CLIClient {
         if (chunkCount === 0) clearBusyIndicator();
         if (detector) {
           const { text, blocks: newBlocks } = detector.processChunk(chunk);
-          print(text, false);
+          print(redactGeneratedImages(text), false);
           blocks.push(...newBlocks);
         } else {
-          print(chunk, false);
+          print(redactGeneratedImages(chunk), false);
         }
         chunkCount++;
       },
@@ -85,7 +87,7 @@ export class CLIClient {
     if (detector) {
       const final = detector.finalize();
       if (chunkCount === 0) clearBusyIndicator();
-      print(final.text, false);
+      print(redactGeneratedImages(final.text), false);
       blocks.push(...final.blocks);
     } else {
       if (chunkCount === 0) clearBusyIndicator();
@@ -117,7 +119,7 @@ export class CLIClient {
         query,
         (chunk) => {
           if (chunkCount === 0) clearBusyIndicator();
-          print(chunk, false);
+          print(redactGeneratedImages(chunk), false);
           chunkCount++;
         },
         { enableEncryption: true }
@@ -143,15 +145,7 @@ export class CLIClient {
       input: process.stdin,
       output: process.stdout,
     });
-
-    const prompt = (): Promise<string | null> => {
-      return new Promise((resolve) => {
-        rl.question('You: ', (answer) => {
-          resolve(answer);
-        });
-        rl.once('close', () => resolve(null));
-      });
-    };
+    const prompt = createLinePrompt(rl);
 
     // Welcome message
     print('');
@@ -220,7 +214,8 @@ export class CLIClient {
 
       // Request title for new conversations (first message)
       const existingConv = this.store.get(this.conversationId);
-      const requestTitle = existingConv?.title === 'New Conversation';
+      const requestTitle =
+        this.app.isSyncInitialized() && existingConv?.title === 'New Conversation';
 
       let lumoResponse = await this.sendToLumo({ requestTitle });
       this.store.appendAssistantResponse(this.conversationId, lumoResponse.message);

@@ -16,6 +16,7 @@ import { logger } from '../../app/logger.js';
 import { deterministicUUID } from '../../app/id-generator.js';
 import { Role, ConversationStatus } from '@lumo/types.js';
 import type { Turn, AssistantMessageData } from '../../lumo-client/types.js';
+import { turnFromStoredContent } from '../../lumo-client/images.js';
 import {
     findNewMessages,
     hashMessage,
@@ -350,10 +351,7 @@ export class FallbackStore {
      * Convert conversation to Lumo Turn[] format for API call
      */
     toTurns(id: ConversationId): Turn[] {
-        return this.getMessages(id).map(({ role, content }) => ({
-            role,
-            content,
-        }));
+        return this.getMessages(id).map(({ role, content }) => turnFromStoredContent(role, content));
     }
 
     /**
@@ -395,7 +393,15 @@ export class FallbackStore {
      * Get all dirty conversations (need sync)
      */
     getDirty(): ConversationState[] {
-        return Array.from(this.conversations.values()).filter(c => c.dirty);
+        return Array.from(this.conversations.values()).filter(c => c.dirty && !c.private);
+    }
+
+    markPrivate(id: ConversationId): void {
+        const state = this.conversations.get(id);
+        if (state) {
+            state.private = true;
+            state.dirty = false;
+        }
     }
 
     /**
@@ -440,6 +446,9 @@ export class FallbackStore {
      * Mark a conversation as dirty and notify callback
      */
     private markDirty(state: ConversationState): void {
+        if (state.private) {
+            return;
+        }
         state.dirty = true;
         this.onDirtyCallback?.();
     }

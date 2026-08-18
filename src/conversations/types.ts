@@ -61,6 +61,7 @@ export interface ConversationState {
     messages: Message[];
     // Sync tracking
     dirty: boolean;             // Needs sync to server
+    private?: boolean;          // /private: keep local, do not sync
     remoteId?: RemoteId;        // Server-assigned ID (if synced)
     lastSyncedAt?: number;      // Last successful sync timestamp
 }
@@ -81,4 +82,5 @@ export interface MessageForStore {
     role: Role;
     content?: string;
     id?: string; // Semantic ID for deduplication (call_id for tools)
+    images?: import('@lumo/types-api.js').WireImage[];
 }
