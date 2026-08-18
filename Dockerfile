@@ -15,7 +15,7 @@ COPY tsconfig.json ./
 # ============================================================================
 # Go builder stage - compile static Go binary
 # ============================================================================
-FROM golang:1.24-alpine AS go-builder
+FROM golang:1.25-alpine AS go-builder
 
 WORKDIR /build
 COPY src/auth/login/go ./

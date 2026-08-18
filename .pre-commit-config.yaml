@@ -1,0 +1,10 @@
+# Install with the shared venv: ../.venv/bin/pre-commit install
+repos:
+  - repo: local
+    hooks:
+      - id: test-ci
+        name: tsc + unit + integration
+        language: system
+        entry: ./scripts/ci-local.sh
+        pass_filenames: false
+        always_run: true
