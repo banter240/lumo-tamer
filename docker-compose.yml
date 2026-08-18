@@ -1,7 +1,11 @@
 services:
 
   tamer:
+    # Pin the tag in .env (see .env.example). Git branch on the host does not matter.
+    # First boot: if GHCR is empty, `build: .` is the fallback.
+    image: ${LUMO_TAMER_IMAGE:-ghcr.io/banter240/lumo-tamer:dev}
     build: .
+    pull_policy: missing
     container_name: lumo-tamer
     ports:
       - "3003:3003"
@@ -14,12 +18,35 @@ services:
       - lumo-vault-key
     environment:
       - NODE_ENV=production
+      # Keep config.yaml + sessions on the mounted /app (same as before).
+      - LUMO_HOME=/app
     restart: unless-stopped
 
-  # Optional: Browser service
-  # Only needed when using "browser" auth method and you can't use your own browser.
-  # Runs Chromium with CDP enabled, UI accessible via :3001
+  # Optional notifier only. Not part of a normal deploy.
+  #   docker compose --profile watch up -d
+  watchtower:
+    profiles: ["watch"]
+    image: containrrr/watchtower:latest
+    container_name: lumo-tamer-watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      WATCHTOWER_MONITOR_ONLY: "true"
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_NOTIFICATIONS: ${WATCHTOWER_NOTIFICATIONS:-}
+      WATCHTOWER_NOTIFICATION_URL: ${WATCHTOWER_NOTIFICATION_URL:-}
+    command: --interval 300 lumo-tamer
+    restart: unless-stopped
+
+  # Optional Chromium+noVNC (~1 GB). Not started by a normal `compose up`.
+  # Prefer http://<host>:3003/auth. Start this only when Proton blocks
+  # password login (CAPTCHA / 2028) or you need a hardware key:
+  #   docker compose --profile browser up -d browser
+  #   open http://<host>:3001  -> lumo.proton.me
+  #   docker compose run --rm tamer auth browser
+  #   docker compose --profile browser stop browser
   browser:
+    profiles: ["browser"]
     # image: lscr.io/linuxserver/chromium:latest
     build:
       context: .
@@ -46,12 +73,13 @@ services:
 
   # Optional: Open WebUI for testing
   open-webui:
+    profiles: ["webui"]
     image: ghcr.io/open-webui/open-webui:main-slim
     container_name: open-webui
     # Read apiKey from config.yaml at startup and export as OPENAI_API_KEYS env var
     entrypoint: ["/bin/bash", "-c", "export OPENAI_API_KEYS=$(grep 'apiKey:' /app/config.yaml | head -1 | sed 's/.*apiKey: *\"\\{0,1\\}//;s/\".*//') && exec /app/backend/start.sh"]
     ports:
-      - "8080:8080"
+      - "3080:8080"
     environment:
       - OPENAI_API_BASE_URLS=http://tamer:3003/v1
       - ENABLE_OPENAI_API=true
