@@ -130,9 +130,9 @@ describe('NativeToolCallProcessor', () => {
       expect(processor.getResult().misrouted).toBe(false);
     });
 
-    it('does not flag native image tools as misrouted', () => {
+    it('does not flag proton_info as misrouted', () => {
       const processor = new NativeToolCallProcessor();
-      const shouldAbort = processor.feedToolCall('{"name":"generate_image","parameters":{"prompt":"a cat"}}');
+      const shouldAbort = processor.feedToolCall('{"name":"proton_info","parameters":{"topic":"lumo"}}');
       processor.finalize();
       expect(shouldAbort).toBe(false);
       expect(processor.getResult().misrouted).toBe(false);

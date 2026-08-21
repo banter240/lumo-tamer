@@ -26,7 +26,7 @@ export function sanitizeInstructions(text: string): string {
 export function findFirstUserTurnIndex(turns: Turn[]): number {
   for (let i = 0; i < turns.length; i++) {
     const turn = turns[i];
-    if (turn.role === 'user' && (turn.content || (turn.images && turn.images.length > 0))) {
+    if (turn.role === 'user' && turn.content) {
       return i;
     }
   }
@@ -40,7 +40,7 @@ export function findFirstUserTurnIndex(turns: Turn[]): number {
 export function findLastUserTurnIndex(turns: Turn[]): number {
   for (let i = turns.length - 1; i >= 0; i--) {
     const turn = turns[i];
-    if (turn.role === 'user' && (turn.content || (turn.images && turn.images.length > 0))) {
+    if (turn.role === 'user' && turn.content) {
       return i;
     }
   }

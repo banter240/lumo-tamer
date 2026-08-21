@@ -10,6 +10,8 @@ function modelCard(id: string) {
     object: 'model' as const,
     created: MODEL_CREATED,
     owned_by: 'proton',
+    context_window: 131072,
+    max_tokens: 13107,
   };
 }
 

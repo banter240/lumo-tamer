@@ -27,6 +27,6 @@ describe('buildInstructions compact', () => {
 
 describe('selectNativeTools', () => {
   it('keeps proton_info so HA/plain chat does not lose native tools', () => {
-    expect(selectNativeTools({ includeInternal: true, webSearch: false, images: false })).toEqual(['proton_info']);
+    expect(selectNativeTools({ includeInternal: true, webSearch: false })).toEqual(['proton_info']);
   });
 });

@@ -135,16 +135,12 @@ const authConfigSchema = z.object({
 });
 
 const commandsConfigSchema = z.object({ enabled: z.boolean(), wakeword: z.string() });
-const imagesConfigSchema = z.object({ maxInputBytes: byteSizeSchema });
-
 const sharedMergedFields = {
   auth: authConfigSchema,
   log: logConfigSchema,
   conversations: conversationsConfigSchema,
   commands: commandsConfigSchema,
   enableWebSearch: z.boolean(),
-  enableImageTools: z.boolean(),
-  images: imagesConfigSchema,
 };
 
 const serverMergedConfigSchema = z.object({
@@ -282,13 +278,6 @@ export const getLogConfig = () => getConfig().log;
 export const getConversationsConfig = () => getConfig().conversations;
 export const getCommandsConfig = () => getConfig().commands;
 export const getEnableWebSearch = () => getConfig().enableWebSearch;
-export const getEnableImageTools = () => getConfig().enableImageTools;
-
-export function getImagesMaxBytes(): number {
-  const raw = getConfig().images.maxInputBytes;
-  if (typeof raw === 'number') return raw;
-  return bytes.parse(raw) ?? 4 * 1024 * 1024;
-}
 
 // Server-specific getters
 export function getServerConfig(): ServerMergedConfig {

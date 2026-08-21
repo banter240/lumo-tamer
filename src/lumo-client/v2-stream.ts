@@ -25,7 +25,6 @@ export type V2StreamMessage =
     | { type: 'token_data'; target: 'message' | 'reasoning' | 'tool_call'; content: string; encrypted?: boolean }
     | { type: 'server_tool_call'; call_id?: string; name: string; arguments?: string; encrypted?: boolean }
     | { type: 'server_tool_result'; call_id?: string; content: string; encrypted?: boolean }
-    | { type: 'image_data'; image_id?: string; data?: string; is_final?: boolean; encrypted?: boolean }
     | { type: 'usage'; usage: LumoUsage }
     | { type: 'harmful' }
     | { type: 'error'; message?: string }
@@ -118,24 +117,6 @@ export class V2StreamProcessor {
                 call_id: tr.call_id,
                 content: tr.content ?? '',
                 ...(tr.encrypted ? { encrypted: true } : {}),
-            });
-            return;
-        }
-
-        if (objectType === 'lumo.image_data' || objectType === 'image_data') {
-            const nested = (obj.image && typeof obj.image === 'object')
-                ? obj.image as Record<string, unknown>
-                : obj;
-            const image_id = pickString(nested.image_id) ?? pickString(nested.id) ?? pickString(obj.image_id);
-            const data = pickString(nested.data) ?? pickString(obj.data);
-            const is_final = pickBool(nested.is_final) ?? pickBool(obj.is_final);
-            const encrypted = !!(nested.encrypted ?? obj.encrypted);
-            out.push({
-                type: 'image_data',
-                ...(image_id ? { image_id } : {}),
-                ...(data ? { data } : {}),
-                ...(is_final !== undefined ? { is_final } : {}),
-                encrypted,
             });
             return;
         }

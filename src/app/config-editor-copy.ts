@@ -272,16 +272,6 @@ const COPY: Record<string, FieldCopy> = {
     hint: 'Lumo native web_search, weather, stock, crypto. Off so Lumo does not search unless you turn it on. On matches the Lumo website.',
     more: 'On: Lumo may call native web_search / weather / stock / crypto like the website. That mixes with custom tools and is a common source of misrouted calls. Off unless you want those extras.',
   },
-  'server.enableImageTools': {
-    label: 'Native image tools',
-    hint: 'Lumo native generate/edit/describe image. Off: big data URLs and easy to trigger by accident.',
-    more: 'On: generate/edit/describe image. Replies can be multi-megabyte data URLs, and Lumo may draw when you asked it to flip a light. Keep off for HA.',
-  },
-  'server.images.maxInputBytes': {
-    label: 'Max inbound image size',
-    hint: 'Max size of an inbound image_url / input_image.',
-    examples: sample('4mb'),
-  },
   'server.customTools.enabled': {
     label: 'Honor client tools[]',
     hint: 'Honor tools[] from HA, OpenCode, etc. Off ignores client tools.',
@@ -356,15 +346,6 @@ const COPY: Record<string, FieldCopy> = {
   'cli.enableWebSearch': {
     label: 'CLI native web search',
     hint: 'Native web search in the CLI. Same caveats as the server toggle.',
-  },
-  'cli.enableImageTools': {
-    label: 'CLI native image tools',
-    hint: 'Native image tools in the CLI.',
-  },
-  'cli.images.maxInputBytes': {
-    label: 'CLI max inbound image size',
-    hint: 'Max inbound image size for the CLI.',
-    examples: sample('4mb'),
   },
   'cli.localActions.enabled': {
     label: 'Run local code blocks',
@@ -524,8 +505,6 @@ export function fieldCategory(path: string): string {
   if (path.startsWith('commands.')) return 'commands';
   if (
     path === 'server.enableWebSearch'
-    || path === 'server.enableImageTools'
-    || path.startsWith('server.images.')
     || path.startsWith('server.customTools.')
   ) {
     return 'tools';

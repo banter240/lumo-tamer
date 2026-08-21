@@ -16,7 +16,7 @@ import { logger } from '../../app/logger.js';
 import { deterministicUUID } from '../../app/id-generator.js';
 import { Role, ConversationStatus } from '@lumo/types.js';
 import type { Turn, AssistantMessageData } from '../../lumo-client/types.js';
-import { turnFromStoredContent } from '../../lumo-client/images.js';
+
 import {
     findNewMessages,
     hashMessage,
@@ -351,7 +351,7 @@ export class FallbackStore {
      * Convert conversation to Lumo Turn[] format for API call
      */
     toTurns(id: ConversationId): Turn[] {
-        return this.getMessages(id).map(({ role, content }) => turnFromStoredContent(role, content));
+        return this.getMessages(id).map(({ role, content }) => ({ role, content: content ?? '' }));
     }
 
     /**

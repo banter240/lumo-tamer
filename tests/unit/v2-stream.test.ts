@@ -139,17 +139,4 @@ describe('V2StreamProcessor', () => {
         expect(fin).toContainEqual({ type: 'token_data', target: 'tool_call', content: JSON.stringify({ name: 'web_search', arguments: { q: 'x' } }) });
     });
 
-    it('surfaces lumo.image_data objects', () => {
-        const line = `data:${JSON.stringify({ object: 'lumo.image_data', image: { id: 'i', data: 'x', is_final: true } })}\n`;
-        expect(run(line)).toEqual([
-            { type: 'image_data', image_id: 'i', data: 'x', is_final: true, encrypted: false },
-        ]);
-    });
-
-    it('surfaces flat image_data fields', () => {
-        const line = `data:${JSON.stringify({ object: 'lumo.image_data', image_id: 'img1', data: 'abc', encrypted: true })}\n`;
-        expect(run(line)).toEqual([
-            { type: 'image_data', image_id: 'img1', data: 'abc', encrypted: true },
-        ]);
-    });
 });

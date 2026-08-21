@@ -165,12 +165,6 @@ server:
   # (and accept more native/custom tool mix-ups).
   enableWebSearch: false
 
-  # Native generate/edit/describe image. Off: replies become huge data URLs
-  # and Lumo may draw when you asked it to control a light.
-  enableImageTools: false
-  images:
-    maxInputBytes: "4mb"
-
   # Honor tools[] from the client (OpenCode, HA, …). Off = ignore client tools.
   # WARNING: When on, Lumo can trigger actions via those clients.
   customTools:
@@ -291,11 +285,6 @@ cli:
     filePath: "lumo-tamer-cli.log"
 
   enableWebSearch: false
-  enableImageTools: false
-  images:
-    maxInputBytes: "4mb"
-
-  # Local actions: code block detection and execution
   localActions:
     # Enable code block detection (```bash, ```read, ```edit, etc.)
     # WARNING: When enabled, Lumo can trigger actions on your machine!

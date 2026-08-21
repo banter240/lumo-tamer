@@ -73,7 +73,6 @@ export interface ChatCompletionsMessage {
     role: string;
     content: string;
     encrypted?: true;
-    images?: Array<{ image_id: string; data: string; encrypted: boolean }>;
 }
 
 export interface ChatCompletionsBody {
@@ -95,13 +94,6 @@ export function buildChatCompletionsBody(params: BuildChatBodyParams): ChatCompl
             content: turn.content ?? '',
             ...(params.encrypted ? { encrypted: true as const } : {}),
         };
-        if (turn.images && turn.images.length > 0) {
-            message.images = turn.images.map((image) => ({
-                image_id: image.image_id,
-                data: image.data,
-                encrypted: image.encrypted,
-            }));
-        }
         return message;
     });
 

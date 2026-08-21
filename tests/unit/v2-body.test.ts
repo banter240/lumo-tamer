@@ -65,20 +65,6 @@ describe('buildChatCompletionsBody', () => {
         expect(body.lumo.target).toBe('title');
     });
 
-    it('forwards turn.images onto the wire message', () => {
-        const body = buildChatCompletionsBody({
-            turns: [{
-                role: Role.User,
-                content: 'look',
-                images: [{ image_id: 'img-1', data: 'AAAA', encrypted: false }],
-            }],
-            tier: 'auto', enableReasoning: false, encrypted: false,
-        });
-        expect(body.messages[0].images).toEqual([
-            { image_id: 'img-1', data: 'AAAA', encrypted: false },
-        ]);
-    });
-
     it('maps tool roles to wire roles', () => {
         const body = buildChatCompletionsBody({
             turns: [
