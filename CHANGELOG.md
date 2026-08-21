@@ -1,3 +1,64 @@
+## [0.7.0-dev.2](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.1...v0.7.0-dev.2) (2026-08-21)
+
+### Bug Fixes
+
+* fix(lumo-client): remove image tool infrastructure
+
+  Image tools were half-implemented: no Proton Attachment API, Base64
+  inflation past 131k context, and OpenCode ignores /v1/models vision
+  capabilities. Rather than ship broken code, delete every trace and
+  start fresh if image support returns.
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  STREAM AND ENCRYPTION
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - Drop image_data V2StreamMessage variant and SSE handler in v2-stream
+  - Remove encryptImage, base64StringToUint8Array, uint8ArrayToBase64String
+    from encryption.ts; encryptTurn no longer touches images
+  - Strip decryptImage, finishImage, pendingImages from client.ts
+  - onImage callback removed from LumoClientOptions; ChatResult.images gone
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  TYPES AND WIRE FORMAT
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - Delete GeneratedImage type; images field dropped from ChatCompletionsMessage
+    and MessageForStore
+  - WireImage import removed from encryption.ts
+  - v2-body.ts no longer maps turn.images onto the wire
+  - instructions.ts filters user turns by content only, not images
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  CONFIG AND TOOLS
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - Delete getEnableImageTools, getImagesMaxBytes from config.ts
+  - Remove enableImageTools and images.maxInputBytes from config-editor-copy
+  - IMAGE_TOOLS removed from native-tools.ts; selectNativeTools drops images param
+  - generate_image, describe_image, edit_image no longer in KNOWN_NATIVE_TOOLS
+  - extractImagesFromContent, fetchImageAsBase64 removed from message-converter
+  - redactGeneratedImages removed from cli/client.ts
+  - vision capability stripped from /v1/models endpoint
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  TESTS
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - Delete tests/unit/images.test.ts entirely
+  - Remove image_data tests from v2-stream.test.ts
+  - Remove image_url forwarding test from message-converter.test.ts
+  - Switch native-tool-call-processor test from generate_image to proton_info
+  - Remove images assertion from v2-body.test.ts
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  INTACT
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - Client tools flattening, extraModels aliases from commit 3c63eae
+  - Upstream WireImage type in packages/lumo/src/types-api.ts
+  - decryptUint8Array re-export (may be used by upstream consumers)
+
 ## [0.7.0-dev.1](https://github.com/banter240/lumo-tamer/compare/v0.6.0...v0.7.0-dev.1) (2026-08-20)
 
 * ci: GHCR images and semantic-release on dev and main
