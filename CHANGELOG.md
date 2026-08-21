@@ -1,3 +1,26 @@
+## [0.7.0-dev.3](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.2...v0.7.0-dev.3) (2026-08-21)
+
+### Features
+
+* feat(usage): estimate prompt_tokens from request body
+
+  Proton does not report prompt/input token counts, only completion
+  tokens. This caused OpenCode's auto-compact to never trigger —
+  it saw prompt_tokens: 0 and thought the context was empty.
+
+  Estimate prompt_tokens from the serialized request body size
+  (~4 chars/token). Not exact, but sufficient for compaction
+  decisions. Also fix total_tokens to include both prompt and
+  completion instead of completion only.
+
+  Changes:
+  - LumoUsage: add prompt_tokens field
+  - client.ts: estimate after buildChatCompletionsBody(), attach to usage
+  - shared.ts: use estimated prompt_tokens instead of hardcoded 0
+  - request-handlers.ts: estimate input_tokens from request.input for
+    Responses API
+  - Tests updated to expect prompt_tokens in usage
+
 ## [0.7.0-dev.2](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.1...v0.7.0-dev.2) (2026-08-21)
 
 ### Bug Fixes
