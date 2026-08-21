@@ -66,6 +66,14 @@ const metricsConfigSchema = z.object({
   prefix: z.string(),
 });
 
+// Prompt token estimation: Proton doesn't report input tokens; we estimate
+// them so clients like OpenCode can make compaction decisions.
+const promptTokenEstimationSchema = z.union([
+  z.literal('auto'),
+  z.literal('off'),
+  z.number().positive(),
+]);
+
 // Validates size strings using the bytes library (same parser Express uses)
 const byteSizeSchema = z.union([
   z.string().refine((val) => bytes.parse(val) !== null, 'Invalid size format (e.g., "360kb", "1mb")'),
@@ -146,6 +154,7 @@ const sharedMergedFields = {
 const serverMergedConfigSchema = z.object({
   ...sharedMergedFields,
   customTools: customToolsConfigSchema,
+  promptTokenEstimation: promptTokenEstimationSchema,
   instructions: serverInstructionsConfigSchema,
   metrics: metricsConfigSchema,
   bodyLimit: byteSizeSchema,

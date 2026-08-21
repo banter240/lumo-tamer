@@ -117,10 +117,13 @@ export type LumoModelTier = 'auto' | 'lumo-lite' | 'lumo-max';
 /**
  * Usage/limit info from the chat/completions `usage` SSE chunk.
  * Proton reports completion tokens + limit metadata, but NOT prompt or
- * reasoning token counts, so those are intentionally absent.
+ * reasoning token counts. We estimate prompt_tokens from the request
+ * body size so clients (OpenCode) can make compaction decisions.
  */
 export interface LumoUsage {
     completion_tokens?: number;
+    /** Estimated input token count (not reported by Proton). */
+    prompt_tokens?: number;
     /** Which tier bucket the request was billed against ('lite' | 'max'). */
     applied_limit_category?: string;
     /** Remaining per-bucket limits (lite/max/images), or null on unlimited plans. */

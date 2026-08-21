@@ -32,11 +32,11 @@ export function conversationIdFromUserField(user?: string): ConversationId | und
 
 /** Re-inject tool protocol on every turn. Long coding sessions forget a first-only inject. */
 export function resolveInjectInto(toolCount: number | undefined): 'first' | 'last' {
-  const configured = getServerInstructionsConfig().injectInto;
-  if (toolCount && toolCount > 0 && getCustomToolsConfig().enabled) {
-    return 'last';
-  }
-  return configured;
+    const configured = getServerInstructionsConfig().injectInto;
+    if (toolCount && toolCount > 0 && getCustomToolsConfig().enabled) {
+        return 'last';
+    }
+    return configured;
 }
 
 export function appendInstructions(...parts: Array<string | undefined>): string {

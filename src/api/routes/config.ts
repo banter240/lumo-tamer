@@ -16,6 +16,7 @@ import {
   walkConfigFields,
   redactSecrets,
   CONFIG_CATEGORIES,
+  FIELD_DEPENDENCIES,
   resetAllEdits,
   type ConfigEdits,
 } from '../../app/config-editor.js';
@@ -31,6 +32,9 @@ export interface ConfigRouterHooks {
 
 function renderConfigPage(): string {
   const extraCss = `
+    .row.hidden-field {
+      display: none !important;
+    }
     .layout {
       display: grid; grid-template-columns: 13.5rem minmax(0, 1fr); gap: 1rem; align-items: start;
     }
@@ -76,6 +80,14 @@ function renderConfigPage(): string {
     .row {
       display: flex; flex-direction: column; gap: 0.35rem;
       padding: 0.95rem 0; border-top: 1px solid var(--line);
+    }
+    .row.dependent {
+      margin-left: 1.5rem; padding-left: 1rem;
+      border-left: 3px solid var(--purple-soft);
+      border-top-color: var(--line);
+    }
+    .row.dependent.hidden-field {
+      display: none !important;
     }
     .row:first-child { border-top: 0; padding-top: 0.2rem; }
     .title {
@@ -192,6 +204,7 @@ function renderConfigPage(): string {
   </div>
   <script>
     const CATEGORIES = ${JSON.stringify(CONFIG_CATEGORIES)};
+    const DEPS = ${JSON.stringify(FIELD_DEPENDENCIES)};
     const statusEl = document.getElementById('status');
     const formEl = document.getElementById('form');
     const paneHead = document.getElementById('paneHead');
@@ -299,11 +312,21 @@ function renderConfigPage(): string {
     function renderFields(list) {
       let html = '';
       for (const field of list) {
+        // Check conditional visibility based on parent field
+        let visible = true;
+        if (field.dependsOn) {
+          const parent = fields.find(f => f.path === field.dependsOn);
+          if (parent && DEPS[field.dependsOn]) {
+            const depInfo = DEPS[field.dependsOn];
+            visible = depInfo.showValues.includes(valueFor(parent));
+          }
+        }
         const current = field.kind !== 'secret'
           && JSON.stringify(valueFor(field)) === JSON.stringify(field.defaultValue);
         const over = field.kind !== 'secret' && !current ? '<span class="over">changed</span>' : '';
         const bool = field.kind === 'boolean' ? ' bool' : '';
-        html += '<div class="row' + bool + '" data-row="' + field.path + '">';
+        const dep = field.dependsOn ? ' dependent' : '';
+        html += '<div class="row' + bool + dep + (visible ? '' : ' hidden-field') + '" data-row="' + field.path + '"' + (visible ? '' : ' style="display:none;"') + '>';
         html += '<div class="title">' + escText(field.label) + ' ' + over + '</div>';
         html += '<p class="desc">' + escText(field.hint || '') + '</p>';
         html += extraBlock(field);
@@ -441,6 +464,21 @@ function renderConfigPage(): string {
           setTimeout(() => { el.textContent = prev; }, 1200);
         });
       });
+      // Conditional field visibility: watch parent toggles
+      for (const [childPath, depInfo] of Object.entries(DEPS)) {
+        const parentEl = formEl.querySelector('[data-path="' + depInfo.parent + '"]');
+        if (!parentEl) continue;
+        const updateChildren = () => {
+          const parentField = fields.find(f => f.path === depInfo.parent);
+          if (!parentField) return;
+          const isVisible = depInfo.showValues.includes(parseCurrent(parentField, parentEl));
+          const childRow = formEl.querySelector('[data-row="' + childPath + '"]');
+          if (childRow) childRow.style.display = isVisible ? '' : 'none';
+        };
+        parentEl.addEventListener('change', updateChildren);
+        parentEl.addEventListener('input', updateChildren);
+        updateChildren();
+      }
       markAllRows();
     }
 

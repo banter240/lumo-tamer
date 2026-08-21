@@ -274,7 +274,9 @@ describe('toOpenAIChatUsage', () => {
 });
 
 describe('resolveInjectInto', () => {
-  it('uses last-message inject when the client sent tools', () => {
+  it('forces last when tools are present to keep protocol fresh', () => {
+    // When custom tools are enabled, force 'last' so the protocol
+    // stays near the response and doesn't fall out of attention window.
     expect(resolveInjectInto(3)).toBe('last');
   });
 });

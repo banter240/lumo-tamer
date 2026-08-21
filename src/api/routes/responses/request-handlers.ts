@@ -111,6 +111,12 @@ function createCompletedResponse(
   output: OutputItem[],
   completionTokens?: number,
 ): OpenAIResponse {
+  const bytes = request.input ? Buffer.byteLength(JSON.stringify(request.input), 'utf8') : 0;
+  const estimator = getServerConfig().promptTokenEstimation;
+  const divisor = estimator === 'off'
+    ? Infinity
+    : (typeof estimator === 'number' ? estimator : 4);
+  const estimatedInputTokens = divisor === Infinity ? 0 : Math.ceil(bytes / divisor);
   return {
     id: responseId,
     object: 'response',
@@ -141,11 +147,11 @@ function createCompletedResponse(
     top_p: 1.0,
     truncation: 'auto',
     usage: completionTokens == null ? null : {
-      input_tokens: 0,
+      input_tokens: estimatedInputTokens,
       input_tokens_details: { cached_tokens: 0 },
       output_tokens: completionTokens,
       output_tokens_details: { reasoning_tokens: 0 },
-      total_tokens: completionTokens,
+      total_tokens: estimatedInputTokens + completionTokens,
     },
     user: request.user ?? null,
     metadata: request.metadata || {},

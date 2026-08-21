@@ -11,6 +11,7 @@ import {
   fieldCategory,
   humanLabel,
   choicesFor,
+  FIELD_DEPENDENCIES,
   type ConfigExample,
 } from './config-editor-copy.js';
 
@@ -23,8 +24,10 @@ export {
   moreFor,
   exampleFor,
   choicesFor,
+  FIELD_DEPENDENCIES,
   type ConfigExample,
   type ConfigCategory,
+  type FieldDependency,
 } from './config-editor-copy.js';
 
 const MULTILINE_KEYS = new Set([
@@ -55,6 +58,7 @@ export interface ConfigField {
   more?: string;
   examples?: ConfigExample[];
   choices?: string[];
+  dependsOn?: string;
 }
 
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -117,6 +121,10 @@ export function walkConfigFields(
     const overridden = current !== undefined && !sameValue(current, defaultValue);
     const copy = fieldCopy(prefix);
     const kind = fieldKind(prefix, defaultValue, copy);
+    
+    // Check if this field has a parent dependency
+    const parentDependsOn = FIELD_DEPENDENCIES[prefix]?.parent;
+    
     fields.push({
       path: prefix,
       kind,
@@ -129,6 +137,7 @@ export function walkConfigFields(
       ...(copy.more ? { more: copy.more } : {}),
       ...(copy.examples?.length ? { examples: copy.examples } : {}),
       ...(copy.choices ? { choices: copy.choices } : {}),
+      ...(parentDependsOn ? { dependsOn: parentDependsOn } : {}),
     });
   }
 

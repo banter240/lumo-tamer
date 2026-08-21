@@ -175,6 +175,13 @@ server:
     # Set to "" to disable prefixing.
     prefix: "user:"
 
+  # Prompt token estimation mode for OpenCode compaction.
+  # Proton doesn't report input tokens, so we estimate them to trigger compaction correctly.
+  #   "auto" - Estimate from UTF-8 byte length (recommended, handles emoji correctly)
+  #   "off"  - Legacy behavior: prompt_tokens = 0 (compaction will not trigger)
+  #   number - Manual override: chars-per-token divisor (e.g., 4 for ASCII)
+  promptTokenEstimation: "auto"
+
 
   instructions:
 

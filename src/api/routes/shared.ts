@@ -43,14 +43,15 @@ export interface RequestContext {
   commandContext: CommandContext;
   requestTitle: boolean;
 }
-
-/** Proton only reports completion_tokens. Prompt count is unknown. */
+/** Proton reports completion_tokens; prompt_tokens is estimated from request body. */
 export function toOpenAIChatUsage(usage?: LumoUsage): OpenAIChatResponse['usage'] | undefined {
   if (usage?.completion_tokens == null) return undefined;
+
+  const promptTokens = usage.prompt_tokens ?? 0;
   return {
-    prompt_tokens: 0,
+    prompt_tokens: promptTokens,
     completion_tokens: usage.completion_tokens,
-    total_tokens: usage.completion_tokens,
+    total_tokens: promptTokens + usage.completion_tokens,
   };
 }
 

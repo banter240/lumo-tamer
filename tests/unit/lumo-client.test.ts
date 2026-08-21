@@ -61,8 +61,13 @@ describe('LumoClient (Lumo 2.0 chat/completions)', () => {
             { object: 'CompletionChunk', model: 'lumo-max', choices: [], usage: { completion_tokens: 2, applied_limit_category: 'max' } },
         ]);
         const res = await client.chatWithHistory([{ role: Role.User, content: 'hi' }]);
-        expect(res.usage).toEqual({ completion_tokens: 2, applied_limit_category: 'max', model: 'lumo-max' });
-    });
+        expect(res.usage).toEqual({
+          completion_tokens: 2,
+          applied_limit_category: 'max',
+          model: 'lumo-max',
+          prompt_tokens: 62, // Estimated from request body size
+        });
+      });
 
     it('issues a separate title completion and uses its content', async () => {
         const { client, api } = makeClient((opts) => {

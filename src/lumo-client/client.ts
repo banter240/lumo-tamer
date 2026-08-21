@@ -34,7 +34,7 @@ import {
 import { buildChatCompletionsBody, LUMO_CHAT_ENDPOINT, type LumoCompletionTarget } from './v2-body.js';
 import { V2StreamProcessor } from './v2-stream.js';
 import { selectNativeTools } from './native-tools.js';
-import { getInstructionsConfig, getLogConfig, getConfigMode, getCustomToolsConfig, getEnableWebSearch } from '../app/config.js';
+import { getInstructionsConfig, getLogConfig, getConfigMode, getCustomToolsConfig, getEnableWebSearch, getServerConfig } from '../app/config.js';
 import { injectInstructionsIntoTurns } from './instructions.js';
 import { NativeToolCallProcessor, type NativeToolCallResult } from '../api/tools/native-tool-call-processor.js';
 import { postProcessTitle } from '@lumo/lib/lumo-api-client/utils.js';
@@ -277,6 +277,15 @@ export class LumoClient {
             target: params.target,
         });
 
+        // Proton doesn't report prompt_tokens; estimate from request body so
+        // clients like OpenCode can make compaction decisions.
+        const bytes = Buffer.byteLength(JSON.stringify(body), 'utf8');
+        const estimator = getServerConfig().promptTokenEstimation;
+        const divisor = estimator === 'off'
+          ? Infinity  // Results in 0 tokens
+          : (typeof estimator === 'number' ? estimator : 4);  // auto: 4 bytes/token average
+        const estimatedPromptTokens = divisor === Infinity ? 0 : Math.ceil(bytes / divisor);
+
         const stream = (await this.protonApi({
             url: params.endpoint,
             method: 'post',
@@ -284,11 +293,18 @@ export class LumoClient {
             output: 'stream',
         })) as ReadableStream<Uint8Array>;
 
-        return this.processStream(stream, encryptionContext, {
+        const result = await this.processStream(stream, encryptionContext, {
             onChunk: params.onChunk,
             onReasoning: params.onReasoning,
             suppressBounce: params.suppressBounce,
         });
+
+        // Attach estimated prompt tokens to usage for downstream reporting.
+        if (result.usage) {
+            result.usage.prompt_tokens = estimatedPromptTokens;
+        }
+
+        return result;
     }
 
     /**

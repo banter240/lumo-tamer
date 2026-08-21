@@ -277,6 +277,12 @@ const COPY: Record<string, FieldCopy> = {
     hint: 'Honor tools[] from HA, OpenCode, etc. Off ignores client tools.',
     more: 'On: tools[] from the client are forwarded (OpenCode, HA, etc.) and Lumo can trigger those actions. Off: client tools are stripped. Native Proton tools are separate toggles above.',
   },
+  'server.promptTokenEstimation': {
+    label: 'Prompt token estimation mode',
+    hint: 'How to estimate input tokens for OpenCode compaction. Proton does not report them.',
+    more: 'auto: estimate from UTF-8 byte length (handles emoji correctly). off: legacy behavior (prompt_tokens=0, compaction disabled). number: manual chars-per-token divisor (e.g., 4 for ASCII).',
+    choices: ['auto', 'off'],
+  },
   'server.customTools.prefix': {
     label: 'Custom tool prefix',
     hint: 'Prefix added to client tool names so they are not mixed with native Proton tools.',
@@ -409,6 +415,25 @@ const PREFIX_COPY: Array<[string, FieldCopy]> = [
     more: 'When mock is on, nothing hits Proton. scenario picks the canned stream (success, error, toolCall, …). Turn it off for a real Lumo session.',
   }],
 ];
+
+/** Child path → parent + values that make the child visible. Serializable for the browser. */
+export interface FieldDependency {
+  parent: string;
+  showValues: unknown[];
+}
+
+export const FIELD_DEPENDENCIES: Record<string, FieldDependency> = {
+  'auth.browser.launch': { parent: 'auth.method', showValues: ['browser'] },
+  'auth.browser.userDataDir': { parent: 'auth.method', showValues: ['browser'] },
+  'auth.browser.cdpEndpoint': { parent: 'auth.method', showValues: ['browser'] },
+  'auth.login.binaryPath': { parent: 'auth.method', showValues: ['login'] },
+  'auth.login.appVersion': { parent: 'auth.method', showValues: ['login'] },
+  'auth.login.userAgent': { parent: 'auth.method', showValues: ['login'] },
+  'conversations.projectName': { parent: 'conversations.enableSync', showValues: [true] },
+  'server.customTools.prefix': { parent: 'server.customTools.enabled', showValues: [true] },
+  'server.metrics.collectDefaultMetrics': { parent: 'server.metrics.enabled', showValues: [true] },
+  'server.metrics.prefix': { parent: 'server.metrics.enabled', showValues: [true] },
+};
 
 const DEFAULT_HINT = 'See config.defaults.yaml and docs/config.md.';
 
