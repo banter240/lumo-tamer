@@ -1,3 +1,71 @@
+## [0.7.0-dev.4](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.3...v0.7.0-dev.4) (2026-08-24)
+
+### Features
+
+* feat(web-ui): split save and restart, add server-down banner, fix number inputs
+
+  Overhaul the /config page so saving config no longer forces a server
+  restart. A dedicated /v1/restart endpoint handles voluntary restarts.
+  Number fields switched from type=number to text+inputmode to dodge
+  browser locale commas.
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SAVE AND RESTART SEPARATED
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - PUT /v1/config no longer calls hooks.onSaved(); it writes the YAML
+    and returns immediately. The UI reloads the form without a restart.
+  - New POST /v1/restart endpoint exits the process so Docker/tsx-watch
+    can bring it back up. Added to isOpenUiPath and setupReadyMiddleware
+    so it bypasses API-key and auth-readiness checks.
+  - Toolbar has three buttons now: Reset to defaults (UI-only, no save),
+    Save (enabled only when dirty), Restart (always enabled, secondary).
+  - Save clears dirty/resets, reloads fields, shows 'Saved.' status.
+  - Restart confirms, posts /v1/restart, polls /health, reloads page.
+  - Reset to defaults sets all visible fields to their defaultValue in
+    the UI only. No server call. Refresh the page to undo.
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SERVER-DOWN BANNER
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - New red banner element shown when /health is unreachable or non-ok.
+  - Auth banner hidden when server is down instead of falsely showing
+    'Not logged in'.
+  - Polling logic distinguishes: 200+auth.valid -> green, 200+no auth ->
+    auth banner, non-ok or network error -> server-down banner.
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  NUMBER INPUT FIXES
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - Switched from type=number (spinner arrows, locale comma) to type=text
+    with inputmode=decimal for all numeric config fields.
+  - parseCurrent replaces commas with dots before Number() conversion.
+  - onEdit also sanitises commas on every keystroke.
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  CSS AND UX POLISH
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - background-attachment: fixed on body prevents glow gradient jump
+    when switching between config categories of different heights.
+  - cursor: not-allowed replaces cursor: wait on disabled buttons.
+  - Duplicate button.secondary CSS rules cleaned up.
+  - Config category persisted to localStorage on nav click, restored
+    on page load.
+  - Layout min-height ensures sidebar reaches viewport bottom.
+  - updateButtons() called after every edit/reset/undo to keep the
+    Save button state correct.
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SERVER RESTART LOGGING
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - restartAfterConfigSave logs each path: Docker/k8s exit, tsx-watch
+    poke, fallback respawn. Previously only a single 'Shutting down'
+    line appeared with no indication of which restart strategy fired.
+
 ## [0.7.0-dev.3](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.2...v0.7.0-dev.3) (2026-08-21)
 
 ### Features
