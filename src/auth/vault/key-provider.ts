@@ -108,11 +108,14 @@ export async function getVaultKey(config: VaultKeyConfig = getDefaultKeyConfig()
         }
     }
 
-    // No secure source available
+    // No secure source available — this happens on first run or when Docker missing key file
+    // Return a soft error that will be caught by Application.create()
     throw new Error(
         'No secure key storage available.\n' +
         '- Desktop: Install system keychain (gnome-keyring, macOS Keychain, Windows Credential Manager)\n' +
-        `- Docker: Mount a secret at ${config.keyFilePath}\n`
+        `- Docker: Mount a secret at ${config.keyFilePath}\n` +
+        `- Missing key file: Docker automatically created a directory instead. Remove and recreate ${config.keyFilePath}\n` +
+        `Solution: rm -rf ${config.keyFilePath}, mkdir -p $(dirname ${config.keyFilePath}), then mount secret or run again`
     );
 }
 

@@ -137,7 +137,7 @@ server:
 
   # Thinking / reasoning mode (Lumo 2.0).
   reasoning:
-    # Used when the client omits reasoning_effort. none = compact/fast (ZeroTricks).
+    # Used when the client omits reasoning_effort. none = compact/fast.
     # high = think. lumo-max still thinks when effort is omitted.
     default: "none"
     # Forward Lumo's thinking tokens to the client as delta.reasoning_content
@@ -181,6 +181,9 @@ server:
   #   "off"  - Legacy behavior: prompt_tokens = 0 (compaction will not trigger)
   #   number - Manual override: chars-per-token divisor (e.g., 4 for ASCII)
   promptTokenEstimation: "auto"
+  # Multiplier for estimated prompt tokens. 1.0 = default, 0.9 = fewer, 1.1 = more.
+  # Use to fine-tune compaction triggers if estimates are too high or too low.
+  promptTokenEstimationFactor: 1.0
 
 
   instructions:
@@ -242,7 +245,7 @@ server:
       Put every parameter inside "arguments" and match that tool's schema
       (arrays are JSON arrays [...], objects are {...}). One object per call.
 
-      DO NOT try to call custom tools through your internal tool mechanism, it will fail with error:true. If you receive such an error, don't try again with different arguments, but output the JSON as text to the user.
+      CRITICAL: Do NOT narrate what you are about to do. Do NOT say "let me read", "I will check", etc.n      Output the JSON code block IMMEDIATELY. No preamble, no announcement.n      Multiple tools: emit multiple
       DO NOT remove the `{{prefix}}` prefix when calling these tools.
 
       The user's system will execute them and return results.
@@ -253,6 +256,8 @@ server:
       Custom tools: JSON in a ```json code block. Copy "name" exactly from the list
       below (keep `{{prefix}}`). Do not shorten names. Parameters go in "arguments";
       arrays stay arrays. One object per call.
+      Do NOT use your built-in tool mechanism — output JSON as TEXT in a code block.
+      Do NOT narrate — emit the code block directly, no announcement.
 
 
     # Where to inject instructions when the request has no client tools.
@@ -280,7 +285,11 @@ server:
     # Bounce instruction sent when Lumo routes a custom tool through its native tool pipeline.
     # The actual tool call JSON is appended at runtime.
     forToolBounce: |
-      You tried to call a custom tool using your built-in tool system, but custom tools must be called by outputting JSON text within a code block. Please output the tool call as JSON, like this:
+      ERROR: You just tried to call a custom tool through your built-in tool mechanism.
+      That does NOT work — arguments are lost and the call is dropped.
+      You MUST output custom tool calls as JSON text in a ```json code block.
+      Do NOT narrate or announce. Just emit the code block directly.
+      Re-output the tool call now as fenced JSON:
 
 
 

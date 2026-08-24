@@ -8,7 +8,7 @@ For CLI local actions (file operations, code execution), see [local-actions.md](
 
 ## How the proxy works
 
-ZeroTricks' contract with Lumo: a custom tool is **text** — one JSON object, preferably in a ` ```json ` fence, name prefixed with `user:`. Bounce is the same: if Lumo uses its native pipeline, ask it to emit that JSON again.
+The contract with Lumo: a custom tool is **text** — one JSON object, preferably in a ` ```json ` fence, name prefixed with `user:`. Bounce is the same: if Lumo uses its native pipeline, ask it to emit that JSON again.
 
 This fork keeps that contract and adds the OpenCode/OpenAI side:
 

@@ -19,6 +19,7 @@ import { SRP_ERROR_2FA_REQUIRED } from '../../auth/login/types.js';
 import { updateAuthConfig } from '../../auth/update-config.js';
 import { isCaptchaAuthError } from '../../auth/sync-capability.js';
 import { htmlPage } from '../web-ui.js';
+import { VERSION } from '../../app/version.js';
 import { getConversationsConfig } from '../../app/config.js';
 import { clientIp, createAttemptGate } from '../attempt-limit.js';
 
@@ -219,6 +220,7 @@ function renderAuthPage(state: { loggedIn: boolean; sync?: boolean; method?: str
     body: inner,
     extraCss,
     page: 'auth',
+    version: VERSION,
   });
 }
 

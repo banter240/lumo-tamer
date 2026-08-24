@@ -346,7 +346,7 @@ conversations:
 ```
 > **Note:** Sync needs a Lumo-scoped session: browser cookies, or password/`/auth` login that got Lumo scope (not the CAPTCHA Drive fallback).
 
-> **Warning:** Projects in Lumo have a limit on the number of conversations per project. When hit, sync will fail. Deleting conversations won't help. Use a new `projectName` as a workaround. See [#16](https://github.com/ZeroTricks/lumo-tamer/issues/16).
+> **Warning:** Projects in Lumo have a limit on the number of conversations per project. When hit, sync will fail. Deleting conversations won't help. Use a new `projectName` as a workaround. See [#16](https://github.com/banter240/lumo-tamer/issues/16).
 
 
 ## API clients
@@ -418,7 +418,7 @@ curl http://localhost:3003/v1/chat/completions \
 Many clients are untested with lumo-tamer but should work if they only use the `/v1/responses` or `/v1/chat/completions` endpoints. As a rule of thumb: basic chatting will most likely work, but the more a client relies on custom tools, the more the experience is degraded.  
 To test an API client, increase log levels on both the client and lumo-tamer: `server.log.level: debug` and check for errors.
 
-Please share your experiences with new API clients (both issues and successes) in [the project discussions](https://github.com/ZeroTricks/lumo-tamer/discussions/new?category=general)!
+Please share your experiences with new API clients (both issues and successes) in [the project discussions](https://github.com/banter240/lumo-tamer/discussions/new?category=general)!
 
 
 ## Docker

@@ -73,6 +73,7 @@ const promptTokenEstimationSchema = z.union([
   z.literal('off'),
   z.number().positive(),
 ]);
+const promptTokenEstimationFactorSchema = z.number().positive().max(10);
 
 // Validates size strings using the bytes library (same parser Express uses)
 const byteSizeSchema = z.union([
@@ -155,6 +156,7 @@ const serverMergedConfigSchema = z.object({
   ...sharedMergedFields,
   customTools: customToolsConfigSchema,
   promptTokenEstimation: promptTokenEstimationSchema,
+  promptTokenEstimationFactor: promptTokenEstimationFactorSchema,
   instructions: serverInstructionsConfigSchema,
   metrics: metricsConfigSchema,
   bodyLimit: byteSizeSchema,

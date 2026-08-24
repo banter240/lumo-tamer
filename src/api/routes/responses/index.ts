@@ -4,7 +4,7 @@ import { logger } from '../../../app/logger.js';
 import { handleRequest } from './request-handlers.js';
 import { convertOpenAIResponseMessages } from '../../message-converter.js';
 import { flattenAndTrackClientTools } from '../../tools/call-id.js';
-import { sendInvalidRequest, sendServerError } from '../../error-handler.js';
+import { sendInvalidRequest, sendServerError, isAuthError, sendAuthRequired } from '../../error-handler.js';
 import {
   conversationIdFromClient,
   conversationIdFromUserField,

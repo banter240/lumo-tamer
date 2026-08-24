@@ -18,6 +18,7 @@ import { suppressFullApiErrors } from '../shims/console.js';
 
 function isRecoverableAuthError(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error);
+  // Vault errors that mean "needs re-login" rather than fatal crash
   return /Vault not found|No secure key storage|Cannot generate vault key|Failed to decrypt vault|Vault key file |Invalid vault key|Key file exists but is invalid|is a directory|Token file missing|wrong key or corrupted|Run: tamer auth/i.test(msg);
 }
 
@@ -29,6 +30,7 @@ export class Application {
   private uid?: string;
   private syncInitialized = false;
   private cleanupFetchAdapter?: () => void;
+  private onSessionInvalidCb?: () => void;
 
   /**
    * Create and initialize the application
@@ -107,6 +109,11 @@ export class Application {
     await this.bootAuthenticated();
   }
 
+  /** Set callback for when session becomes invalid (called from APIServer) */
+  setOnSessionInvalid(cb: () => void): void {
+    this.onSessionInvalidCb = cb;
+  }
+
   /**
    * Initialize mock mode - bypass auth, use simulated API responses
    */
@@ -149,6 +156,10 @@ export class Application {
         enabled: autoRefreshConfig.enabled,
         intervalHours: autoRefreshConfig.intervalHours,
         onError: autoRefreshConfig.onError,
+      },
+      onSessionInvalid: () => {
+        this.clearAuth();
+        this.onSessionInvalidCb?.();
       },
     });
 

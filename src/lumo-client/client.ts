@@ -281,10 +281,11 @@ export class LumoClient {
         // clients like OpenCode can make compaction decisions.
         const bytes = Buffer.byteLength(JSON.stringify(body), 'utf8');
         const estimator = getServerConfig().promptTokenEstimation;
+        const factor = getServerConfig().promptTokenEstimationFactor ?? 1.0;
         const divisor = estimator === 'off'
           ? Infinity  // Results in 0 tokens
           : (typeof estimator === 'number' ? estimator : 4);  // auto: 4 bytes/token average
-        const estimatedPromptTokens = divisor === Infinity ? 0 : Math.ceil(bytes / divisor);
+        const estimatedPromptTokens = divisor === Infinity ? 0 : Math.ceil((bytes / divisor) * factor);
 
         const stream = (await this.protonApi({
             url: params.endpoint,

@@ -23,13 +23,14 @@ export interface FieldCopy {
   examples?: ConfigExample[];
   choices?: string[];
   kind?: FieldKindOverride;
+  noDefault?: boolean;
 }
 
 /** Sidebar groups on /config. `prompts` is titled Advanced (the text Lumo sees). */
 export const CONFIG_CATEGORIES: ConfigCategory[] = [
   { id: 'api', title: 'Server', blurb: 'Listen port, API key, and request size. Changing the port does not update Docker.' },
   { id: 'models', title: 'Models', blurb: 'Which Lumo tiers clients can pick, and whether thinking is on by default.' },
-  { id: 'tools', title: 'Tools', blurb: 'Native Proton tools and tools[] from Home Assistant, OpenCode, and others.' },
+  { id: 'tools', title: 'Tools', blurb: 'Native Proton tools and tools from Home Assistant, OpenCode, and others.' },
   { id: 'chats', title: 'Conversations', blurb: 'Proton sync, Home Assistant grouping, and where threads are stored.' },
   { id: 'logging', title: 'Logging', blurb: 'How noisy logs are and whether chat text is written to disk.' },
   { id: 'auth', title: 'Sign-in', blurb: 'How this server fetches Proton tokens. Prefer login via /auth on Docker.' },
@@ -58,8 +59,9 @@ const COPY: Record<string, FieldCopy> = {
   'auth.method': {
     label: 'Sign-in method',
     hint: 'How this server fetches Proton tokens. On Docker/Portainer use login, then open /auth.',
-    more: 'login: email and password on /auth (SRP). Chat works; sync is on only if Proton granted Lumo scope.\nbrowser: a real Chrome window (desktop) or CDP. Needed when Proton returns abuse/CAPTCHA on password login.\nrclone: paste an rclone Proton config. Last resort; usually no Lumo scope, so no sync.',
+    more: 'login: email and password on /auth (SRP). Chat works; sync is on only if Proton granted Lumo scope.\nbrowser (default): a real Chrome window (desktop) or CDP. Needed when Proton returns abuse/CAPTCHA on password login.\nrclone: paste an rclone Proton config. Last resort; usually no Lumo scope, so no sync.',
     choices: AUTH_METHODS,
+    noDefault: true,
   },
   'auth.autoRefresh.enabled': {
     label: 'Refresh tokens automatically',
@@ -175,8 +177,8 @@ const COPY: Record<string, FieldCopy> = {
   },
   'conversations.enableSync': {
     label: 'Sync chats to Proton',
-    hint: 'Push threads to Proton so they show up on lumo.proton.me. Needs a Lumo-scoped login.',
-    more: 'Requires a session with Lumo scope (browser cookies from lumo.proton.me, or /auth login that did not fall back to Drive). Without scope, chat still works; Proton will not store the thread.',
+    hint: 'Push threads to Proton so they show up on lumo.proton.me. Only available with Lumo-scoped login.',
+    more: 'Only works when auth.method is browser or login. rclone has no Lumo scope. Without scope, chat still works; Proton will not store the thread.',
   },
   'conversations.projectName': {
     label: 'Proton project name',
@@ -240,7 +242,7 @@ const COPY: Record<string, FieldCopy> = {
   'server.reasoning.default': {
     label: 'Thinking when omitted',
     hint: 'Thinking when the client omits reasoning_effort. none = compact/fast; high = think. lumo-max still thinks.',
-    more: 'none = compact (ZeroTricks / most Assist use). high = always think. lumo-max thinks even when this is none, unless the request sends reasoning_effort "none". OpenCode/Assist that should always think: set high.',
+    more: 'none = compact / most Assist use). high = always think. lumo-max thinks even when this is none, unless the request sends reasoning_effort "none". OpenCode/Assist that should always think: set high.',
     choices: REASONING,
   },
   'server.reasoning.surfaceThinking': {
@@ -273,15 +275,20 @@ const COPY: Record<string, FieldCopy> = {
     more: 'On: Lumo may call native web_search / weather / stock / crypto like the website. That mixes with custom tools and is a common source of misrouted calls. Off unless you want those extras.',
   },
   'server.customTools.enabled': {
-    label: 'Honor client tools[]',
-    hint: 'Honor tools[] from HA, OpenCode, etc. Off ignores client tools.',
-    more: 'On: tools[] from the client are forwarded (OpenCode, HA, etc.) and Lumo can trigger those actions. Off: client tools are stripped. Native Proton tools are separate toggles above.',
+    label: 'Honor client tools',
+    hint: 'Honor tools from HA, OpenCode, etc. Off ignores client tools.',
+    more: 'On: tools from the client are forwarded (OpenCode, HA, etc.) and Lumo can trigger those actions. Off: client tools are stripped. Native Proton tools are separate toggles above.',
   },
   'server.promptTokenEstimation': {
-    label: 'Prompt token estimation mode',
-    hint: 'How to estimate input tokens for OpenCode compaction. Proton does not report them.',
-    more: 'auto: estimate from UTF-8 byte length (handles emoji correctly). off: legacy behavior (prompt_tokens=0, compaction disabled). number: manual chars-per-token divisor (e.g., 4 for ASCII).',
+    label: 'Token estimation (Beta)',
+    hint: 'Estimates input tokens for OpenCode compaction. Proton does not report them. Experimental — may be inaccurate.',
+    more: 'auto: estimate from UTF-8 byte length (beta, can be inaccurate). off: prompt_tokens=0, no compaction. The auto mode is experimental and may over- or underestimate.',
     choices: ['auto', 'off'],
+  },
+  'server.promptTokenEstimationFactor': {
+    label: 'Token estimation factor (Beta)',
+    hint: 'Multiplier for estimated prompt tokens. 1.0 = default, 0.9 = fewer, 1.1 = more.',
+    more: 'Fine-tune compaction triggers. Only active when token estimation is auto. If estimates are too high (compaction fires too early), lower to 0.8 or 0.9. If too low (context overflows before compaction), raise to 1.1 or 1.2. Experimental.',
   },
   'server.customTools.prefix': {
     label: 'Custom tool prefix',
@@ -429,10 +436,12 @@ export const FIELD_DEPENDENCIES: Record<string, FieldDependency> = {
   'auth.login.binaryPath': { parent: 'auth.method', showValues: ['login'] },
   'auth.login.appVersion': { parent: 'auth.method', showValues: ['login'] },
   'auth.login.userAgent': { parent: 'auth.method', showValues: ['login'] },
+  'conversations.enableSync': { parent: 'auth.method', showValues: ['browser', 'login'] },
   'conversations.projectName': { parent: 'conversations.enableSync', showValues: [true] },
   'server.customTools.prefix': { parent: 'server.customTools.enabled', showValues: [true] },
   'server.metrics.collectDefaultMetrics': { parent: 'server.metrics.enabled', showValues: [true] },
   'server.metrics.prefix': { parent: 'server.metrics.enabled', showValues: [true] },
+  'server.promptTokenEstimationFactor': { parent: 'server.promptTokenEstimation', showValues: ['auto'] },
 };
 
 const DEFAULT_HINT = 'See config.defaults.yaml and docs/config.md.';
@@ -449,6 +458,7 @@ function pickCopy(base: FieldCopy, overlay: FieldCopy): FieldCopy {
     examples: overlay.examples ?? base.examples,
     choices: overlay.choices ?? base.choices,
     kind: overlay.kind ?? base.kind,
+    noDefault: overlay.noDefault ?? base.noDefault,
   };
 }
 

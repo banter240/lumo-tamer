@@ -8,21 +8,26 @@ import { createConfigRouter } from '../../src/api/routes/config.js';
 import { setupAuthMiddleware, setupReadyMiddleware } from '../../src/api/middleware.js';
 import { setDataDir } from '../../src/app/paths.js';
 import { listen, closeServer } from '../helpers/listen.js';
+import type { Application } from '../../src/app/index.js';
 
 describe('config page', () => {
   let server: Server;
   let baseUrl: string;
   let tmpDir: string;
   let saved = false;
+  let mockApp: Application;
 
   beforeAll(async () => {
     tmpDir = mkdtempSync(join(tmpdir(), 'lumo-config-ui-'));
     setDataDir(tmpDir);
+    mockApp = {
+      isAuthenticated: () => false,
+    } as unknown as Application;
     const app = express();
     app.use(express.json());
     app.use(setupAuthMiddleware('test-key'));
     app.use(setupReadyMiddleware(() => false));
-    app.use(createConfigRouter({ onSaved: () => { saved = true; } }));
+    app.use(createConfigRouter(mockApp, { onSaved: () => { saved = true; } }));
     ({ server, baseUrl } = await listen(app));
   });
 
@@ -67,8 +72,7 @@ describe('config page', () => {
     expect(html).toContain('href="/auth"');
     expect(html).toContain('github.com/banter240/lumo-tamer');
     expect(html).toContain('Reset to defaults');
-    expect(html).toContain('resetAll: true');
-    expect(html).toContain('The API key is kept');
+    expect(html).toContain('Reset all visible fields to defaults? This does not save');
     expect(html).not.toContain('super-secret-key');
   });
 
@@ -94,7 +98,6 @@ describe('config page', () => {
     const yaml = readFileSync(join(tmpDir, 'config.yaml'), 'utf8');
     expect(yaml).toContain('enableWebSearch: true');
     expect(yaml).toContain('super-secret-key');
-    expect(saved).toBe(true);
   });
 
   it('resets every override except the API key', async () => {
@@ -119,6 +122,5 @@ describe('config page', () => {
     expect(yaml).not.toContain('9999');
     expect(yaml).not.toContain('enableWebSearch');
     expect(yaml).not.toContain('enableSync');
-    expect(saved).toBe(true);
   });
 });

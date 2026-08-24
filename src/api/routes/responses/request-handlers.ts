@@ -27,7 +27,7 @@ import {
   setSSEHeaders,
   type ToolCallForPersistence,
 } from '../shared.js';
-import { sendServerError } from '../../error-handler.js';
+import { sendServerError, isAuthError, sendAuthRequired } from '../../error-handler.js';
 import { getMetrics } from '../../../app/metrics.js';
 import { resolveRequestTier } from '../../request-prep.js';
 
@@ -113,10 +113,11 @@ function createCompletedResponse(
 ): OpenAIResponse {
   const bytes = request.input ? Buffer.byteLength(JSON.stringify(request.input), 'utf8') : 0;
   const estimator = getServerConfig().promptTokenEstimation;
+  const factor = getServerConfig().promptTokenEstimationFactor ?? 1.0;
   const divisor = estimator === 'off'
     ? Infinity
     : (typeof estimator === 'number' ? estimator : 4);
-  const estimatedInputTokens = divisor === Infinity ? 0 : Math.ceil(bytes / divisor);
+  const estimatedInputTokens = divisor === Infinity ? 0 : Math.ceil((bytes / divisor) * factor);
   return {
     id: responseId,
     object: 'response',
@@ -272,7 +273,11 @@ export async function handleRequest(
         emitter.emitError(error as Error);
         res.end();
       } else {
-        sendServerError(res);
+        if (isAuthError(error)) {
+          sendAuthRequired(res);
+        } else {
+          sendServerError(res);
+        }
       }
       return;
     }

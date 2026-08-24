@@ -29,7 +29,7 @@ import {
   tryPrepareTools,
   resolveRequestTier,
 } from '../../request-prep.js';
-import { sendInvalidRequest, sendServerError } from '../../error-handler.js';
+import { sendInvalidRequest, sendServerError, isAuthError, sendAuthRequired } from '../../error-handler.js';
 
 export function createChatCompletionsRouter(deps: EndpointDependencies): Router {
   const router = Router();
@@ -132,6 +132,7 @@ export function createChatCompletionsRouter(deps: EndpointDependencies): Router 
     } catch (error) {
       logger.error('Error processing chat completion:');
       logger.error(error);
+      if (isAuthError(error)) return sendAuthRequired(res);
       return sendServerError(res);
     }
   });

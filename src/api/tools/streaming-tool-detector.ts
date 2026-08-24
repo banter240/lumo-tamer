@@ -1,7 +1,7 @@
 /**
  * Streaming Tool Detector
  *
- * Locate (ZeroTricks): fence first, then a raw {"name": blob.
+ * Locate: fence first, then a raw {"name": blob.
  * Extract: strict JSON, jammed objects, then lenient strings.
  * History [Tool Call]/Done is leftover from older flatten; new history
  * is the same fenced JSON Lumo is instructed to emit.

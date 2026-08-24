@@ -14,6 +14,8 @@ const ICON_GITHUB = '<svg viewBox="0 0 24 24" width="18" height="18" fill="curre
 const ICON_ACCOUNT = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5 19.5c.8-3.2 3.5-5 7-5s6.2 1.8 7 5"/></svg>';
 const ICON_SETTINGS = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
 
+const ICON_RESTART = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><polyline points="21 3 21 8 16 8"/></svg>';
+
 function iconBtn(href: string, label: string, svg: string, extra = ''): string {
   return `<a class="icon-btn" href="${href}" aria-label="${label}" title="${label}"${extra}>${svg}</a>`;
 }
@@ -64,6 +66,7 @@ html, body { margin: 0; min-height: 100%; }
 body {
   font-family: Inter, system-ui, sans-serif;
   background: var(--glow), var(--bg);
+  background-attachment: fixed;
   color: var(--text);
   line-height: 1.45;
 }
@@ -111,13 +114,15 @@ textarea.tall { min-height: 12rem; }
 input[type=checkbox] { width: 1.1rem; height: 1.1rem; accent-color: var(--purple); }
 button, .btn {
   display: inline-flex; align-items: center; justify-content: center;
-  padding: 0.7rem 1.05rem; border: 0; border-radius: 999px;
+  padding: 0.7rem 1.1rem; border: 0; border-radius: 999px;
   background: var(--purple); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
 }
+button.secondary { background: var(--purple-soft); color: var(--purple); }
+button.secondary:hover { background: var(--purple-soft-hover); }
 button:hover, .btn:hover { background: var(--purple-hover); }
 button.secondary { background: var(--purple-soft); color: var(--purple); }
 button.secondary:hover { background: var(--purple-soft-hover); }
-button:disabled { opacity: 0.55; cursor: wait; }
+button:disabled { opacity: 0.55; cursor: not-allowed; }
 .ok { color: var(--ok); }
 .err { color: var(--err); }
 .hint, .muted { color: var(--muted); font-size: 0.85rem; line-height: 1.45; }
@@ -131,8 +136,11 @@ export function htmlPage(options: {
   wide?: boolean;
   extraCss?: string;
   page: 'auth' | 'config';
+  version?: string;
 }): string {
   const width = options.wide ? '74rem' : '26rem';
+  const verTag = options.version ? ` <span class="ver">v${options.version}</span>` : '';
+  const verCss = '.ver { color: var(--muted); font-size: 0.72rem; font-weight: 600; opacity: 0.8; }'
   const navBtn = options.page === 'config'
     ? iconBtn('/auth', 'Account', ICON_ACCOUNT)
     : iconBtn('/config', 'Settings', ICON_SETTINGS);
@@ -143,7 +151,7 @@ export function htmlPage(options: {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${options.title}</title>
   <script>${THEME_BOOT}</script>
-  <style>:root { --page-width: ${width}; }${protonUiCss}${options.extraCss ?? ''}</style>
+  <style>:root { --page-width: ${width}; }${protonUiCss}${verCss}${options.extraCss ?? ''}</style>
 </head>
 <body>
   <div class="shell">
@@ -152,7 +160,7 @@ export function htmlPage(options: {
         <div class="mark">L</div>
         <div>
           <h1>lumo-tamer</h1>
-          <p>Unofficial Proton Lumo proxy</p>
+          <p>Unofficial Proton Lumo proxy${verTag}</p>
         </div>
       </a>
       <div class="brand-actions">

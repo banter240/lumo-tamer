@@ -59,6 +59,7 @@ export interface ConfigField {
   examples?: ConfigExample[];
   choices?: string[];
   dependsOn?: string;
+  noDefault?: boolean;
 }
 
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -124,7 +125,8 @@ export function walkConfigFields(
     
     // Check if this field has a parent dependency
     const parentDependsOn = FIELD_DEPENDENCIES[prefix]?.parent;
-    
+    const noDefault = copy.noDefault ?? false;
+
     fields.push({
       path: prefix,
       kind,
@@ -138,6 +140,7 @@ export function walkConfigFields(
       ...(copy.examples?.length ? { examples: copy.examples } : {}),
       ...(copy.choices ? { choices: copy.choices } : {}),
       ...(parentDependsOn ? { dependsOn: parentDependsOn } : {}),
+      ...(noDefault ? { noDefault: true } : {}),
     });
   }
 

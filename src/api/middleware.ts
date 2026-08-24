@@ -10,6 +10,7 @@ function isOpenUiPath(path: string): boolean {
     || path.startsWith('/auth/')
     || path === '/config'
     || path === '/v1/config'
+    || path === '/v1/restart'
   );
 }
 
@@ -31,7 +32,7 @@ export function setupAuthMiddleware(apiKey: string): RequestHandler {
 
 export function setupReadyMiddleware(isReady: () => boolean): RequestHandler {
   return (req, res, next) => {
-    if (isOpenUiPath(req.path) || req.path === '/v1/models' || req.path.startsWith('/v1/models/')) {
+    if (isOpenUiPath(req.path) || req.path === '/v1/models' || req.path === '/v1/restart' || req.path.startsWith('/v1/models/')) {
       return next();
     }
     if (isReady()) {

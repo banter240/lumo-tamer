@@ -60,8 +60,32 @@ function isInvalidJsonBody(err: unknown): boolean {
   return candidate.status === 400 && candidate.type === 'entity.parse.failed' && candidate.body !== undefined;
 }
 
+export function sendAuthRequired(
+  res: Response
+): Response<OpenAIErrorBody> {
+  return res.status(401).json({
+    error: {
+      message: 'Authentication expired or invalid. Open /auth in your browser and log in to Proton again.',
+      type: 'invalid_request_error',
+      param: null,
+      code: 'auth_required',
+    },
+  });
+}
+
+export function isAuthError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const candidate = err as { status?: number; Code?: number };
+  return candidate.status === 401 || candidate.Code === 401;
+}
+
 export const setupApiErrorHandler = (): ErrorRequestHandler => {
   return (err, _req, res, next) => {
+    if (isAuthError(err)) {
+      logger.warn({ err }, 'Auth error in request - session may be invalid');
+      return sendAuthRequired(res);
+    }
+
     if (isPayloadTooLarge(err)) {
       logger.warn({ err }, 'Request body exceeds parser limit');
       return res.status(413).json({

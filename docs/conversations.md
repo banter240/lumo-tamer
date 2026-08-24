@@ -148,7 +148,7 @@ Browser cookies from lumo.proton.me always have it. Password / `/auth` login has
 
 ### Conversation Limit
 
-Proton's backend enforces a per-project conversation limit. Deleted conversations count towards this limit. When reached, sync fails with HTTP 422 "You've reached maximum number of conversations". Use a new `projectName` to work around this. See [#16](https://github.com/ZeroTricks/lumo-tamer/issues/16).
+Proton's backend enforces a per-project conversation limit. Deleted conversations count towards this limit. When reached, sync fails with HTTP 422 "You've reached maximum number of conversations". Use a new `projectName` to work around this. See [#16](https://github.com/banter240/lumo-tamer/issues/16).
 
 ---
 

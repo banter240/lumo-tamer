@@ -27,6 +27,8 @@ export interface AuthManagerOptions {
         /** Enable refresh on 401 errors (default: true) */
         onError?: boolean;
     };
+    /** Called when session becomes invalid (refresh fails after 401) */
+    onSessionInvalid?: () => void;
 }
 
 export class AuthManager {
@@ -38,6 +40,7 @@ export class AuthManager {
     private isRefreshing = false;
     private lastRefreshFailure: { at: string; error: string } | null = null;
     private consecutiveFailures = 0;
+    private onSessionInvalid?: () => void;
 
     constructor(options: AuthManagerOptions) {
         this.provider = options.provider;
@@ -47,6 +50,7 @@ export class AuthManager {
             intervalHours: options.autoRefresh?.intervalHours ?? 20,
             onError: options.autoRefresh?.onError ?? true,
         };
+        this.onSessionInvalid = options.onSessionInvalid;
     }
 
     /**
@@ -169,6 +173,8 @@ export class AuthManager {
             };
         } catch (error) {
             logger.error({ error, consecutiveFailures: this.consecutiveFailures }, 'Failed to refresh tokens after 401');
+            logger.warn('Session is now invalid. Dropping session; waiting for /auth re-login.');
+            this.onSessionInvalid?.();
             return null;
         }
     }

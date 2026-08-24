@@ -22,7 +22,9 @@ import {
 } from '../../app/config-editor.js';
 import { logger } from '../../app/logger.js';
 import { htmlPage } from '../web-ui.js';
+import { VERSION } from '../../app/version.js';
 import { clientIp, createAttemptGate } from '../attempt-limit.js';
+import type { Application } from '../../app/index.js';
 
 const allowSave = createAttemptGate(20);
 
@@ -30,13 +32,14 @@ export interface ConfigRouterHooks {
   onSaved?: () => void;
 }
 
-function renderConfigPage(): string {
+function renderConfigPage(isAuthenticated: boolean): string {
   const extraCss = `
     .row.hidden-field {
       display: none !important;
     }
     .layout {
       display: grid; grid-template-columns: 13.5rem minmax(0, 1fr); gap: 1rem; align-items: start;
+      min-height: calc(100vh - 8rem);
     }
     .side {
       position: sticky; top: 1rem; display: flex; flex-direction: column; gap: 0.15rem;
@@ -184,6 +187,41 @@ function renderConfigPage(): string {
     }
   `;
   const body = `
+  <div class="auth-banner" id="authBanner" style="display: ${isAuthenticated ? 'none' : 'block'}; padding: 0.75rem 1rem; margin-bottom: 1rem; background: var(--purple-soft); border-left: 4px solid var(--err); border-radius: 6px; font-size: 0.85rem;">
+    <strong>⚠️ Not logged in:</strong> Lumo-Tamer is waiting for authentication. Open <a href="/auth" style="color: var(--text); text-decoration: underline;">/auth</a> in your browser and sign in.
+  </div>
+  <div class="server-down-banner" id="serverDownBanner" style="display: none; padding: 0.75rem 1rem; margin-bottom: 1rem; background: #ff6b6b; color: #fff; border-left: 4px solid #c92a2a; border-radius: 6px; font-size: 0.85rem;">
+    <strong>⚠️ Server is down</strong> — connection lost.
+  </div>
+  <script>
+    // Auto-refresh auth status every 5 seconds
+    (async () => {
+      const banner = document.getElementById('authBanner');
+      const serverDownBanner = document.getElementById('serverDownBanner');
+      if (!banner || !serverDownBanner) return;
+      setInterval(async () => {
+        try {
+          const res = await fetch('/health', { cache: 'no-store' });
+          if (!res.ok) {
+            banner.style.display = 'none';
+            serverDownBanner.style.display = 'block';
+            return;
+          }
+          const data = await res.json();
+          if (data.auth && data.auth.valid) {
+            banner.style.display = 'none';
+            serverDownBanner.style.display = 'none';
+          } else {
+            banner.style.display = 'block';
+            serverDownBanner.style.display = 'none';
+          }
+        } catch (_) {
+          banner.style.display = 'none';
+          serverDownBanner.style.display = 'block';
+        }
+      }, 5000);
+    })();
+  </script>
   <div class="layout">
     <nav class="side" id="nav" aria-label="Setting categories"></nav>
     <div>
@@ -193,7 +231,8 @@ function renderConfigPage(): string {
           <span id="status" class="hint">Loading…</span>
           <div class="toolbar-actions">
             <button id="resetAll" type="button" class="secondary" disabled>Reset to defaults</button>
-            <button id="save" type="button" disabled>Save and restart</button>
+            <button id="saveRestart" type="button">Save</button>
+            <button id="restartBtn" type="button" class="secondary">Restart</button>
           </div>
           <span id="msg" class="muted toolbar-msg"></span>
         </div>
@@ -209,14 +248,20 @@ function renderConfigPage(): string {
     const formEl = document.getElementById('form');
     const paneHead = document.getElementById('paneHead');
     const navEl = document.getElementById('nav');
-    const saveBtn = document.getElementById('save');
+    const saveRestartBtn = document.getElementById('saveRestart');
+    const restartBtn = document.getElementById('restartBtn');
     const resetAllBtn = document.getElementById('resetAll');
+
+    function updateButtons() {
+      const hasChanges = dirty.size > 0 || resets.size > 0;
+      saveRestartBtn.disabled = !hasChanges;
+    }
     const msgEl = document.getElementById('msg');
     const filterEl = document.getElementById('filter');
     const dirty = new Map();
     const resets = new Set();
     let fields = [];
-    let active = 'api';
+    let active = localStorage.getItem('lumo-tamer-config-cat') || 'api';
 
     function escText(s) {
       return String(s).replace(/[&<>]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -268,7 +313,7 @@ function renderConfigPage(): string {
         return '<input type="text" data-path="' + field.path + '" value="' + escAttr(formatList(field.path, value)) + '">';
       }
       if (field.kind === 'number') {
-        return '<input type="number" data-path="' + field.path + '" value="' + escAttr(value) + '">';
+        return '<input type="text" inputmode="decimal" data-path="' + field.path + '" value="' + escAttr(value) + '">';
       }
       if (field.kind === 'multiline' || field.kind === 'json') {
         const raw = field.kind === 'json' ? JSON.stringify(value, null, 2) : (value ?? '');
@@ -332,7 +377,7 @@ function renderConfigPage(): string {
         html += extraBlock(field);
         html += '<div class="controls"><div class="control">' + inputFor(field) + '</div>';
         html += '<div class="actions">';
-        if (field.kind !== 'secret') {
+        if (field.kind !== 'secret' && !field.noDefault) {
           html += '<button type="button" class="btn-default' + (current ? ' is-current' : ' is-reset')
             + '" data-reset="' + field.path + '">Default</button>';
         }
@@ -345,7 +390,10 @@ function renderConfigPage(): string {
 
     function parseCurrent(field, el) {
       if (field.kind === 'boolean') return el.checked;
-      if (field.kind === 'number') return el.value === '' ? field.defaultValue : Number(el.value);
+      if (field.kind === 'number') {
+        const val = el.value.replace(/,/g, '.');
+        return val === '' ? field.defaultValue : Number(val);
+      }
       if (field.kind === 'json') {
         try { return JSON.parse(el.value); } catch { return el.value; }
       }
@@ -494,6 +542,7 @@ function renderConfigPage(): string {
       navEl.querySelectorAll('[data-cat]').forEach((el) => {
         el.addEventListener('click', () => {
           active = el.getAttribute('data-cat');
+          localStorage.setItem('lumo-tamer-config-cat', active);
           filterEl.value = '';
           render();
         });
@@ -522,12 +571,20 @@ function renderConfigPage(): string {
       }
       renderNav();
       bindForm();
-      saveBtn.disabled = false;
+      updateButtons();
       resetAllBtn.disabled = false;
+    }
+
+    function updateButtons() {
+      const hasChanges = dirty.size > 0 || resets.size > 0;
+      saveRestartBtn.disabled = !hasChanges;
     }
 
     function onEdit(ev) {
       const el = ev.target;
+      if (el.tagName === 'INPUT' && el.type === 'number') {
+        el.value = el.value.replace(/,/g, '.');
+      }
       const path = el.getAttribute('data-path');
       const field = fields.find((f) => f.path === path);
       const parsed = parseCurrent(field, el);
@@ -540,6 +597,7 @@ function renderConfigPage(): string {
           dirty.set(path, el.value);
         }
         markRow(path);
+        updateButtons();
         return;
       }
       resets.delete(path);
@@ -549,6 +607,7 @@ function renderConfigPage(): string {
         dirty.set(path, (field.kind === 'boolean' || field.kind === 'number') ? parsed : el.value);
       }
       markRow(path);
+      updateButtons();
     }
 
     function onReset(ev) {
@@ -560,6 +619,7 @@ function renderConfigPage(): string {
       dirty.delete(path);
       resets.add(path);
       markRow(path);
+      updateButtons();
     }
 
     function onUndo(ev) {
@@ -570,6 +630,7 @@ function renderConfigPage(): string {
       dirty.delete(path);
       resets.delete(path);
       markRow(path);
+      updateButtons();
     }
 
     async function load() {
@@ -593,10 +654,10 @@ function renderConfigPage(): string {
 
     filterEl.addEventListener('input', render);
 
-    async function putConfig(payload, waitingMsg) {
+    async function putConfig(payload) {
       msgEl.className = 'muted';
       msgEl.textContent = 'Saving…';
-      saveBtn.disabled = true;
+      saveRestartBtn.disabled = true;
       resetAllBtn.disabled = true;
       try {
         const res = await fetch('/v1/config', {
@@ -606,28 +667,52 @@ function renderConfigPage(): string {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Save failed');
+        dirty.clear();
+        resets.clear();
+        updateButtons();
         msgEl.className = 'ok';
-        msgEl.textContent = waitingMsg;
-        await waitUntilUp();
-        location.reload();
+        msgEl.textContent = 'Saved.';
+        await load();
       } catch (err) {
         msgEl.className = 'err';
         msgEl.textContent = err.message || 'Save failed';
-        saveBtn.disabled = false;
+        saveRestartBtn.disabled = false;
         resetAllBtn.disabled = false;
       }
     }
 
     resetAllBtn.addEventListener('click', () => {
-      if (!confirm('Reset all settings to packaged defaults? The API key is kept. The server will restart.')) return;
-      putConfig({ resetAll: true }, 'Reset. Waiting for the server…');
+      if (!confirm('Reset all visible fields to defaults? This does not save — refresh to undo.')) return;
+      for (const field of fields) {
+        if (field.kind === 'secret' || field.noDefault) continue;
+        applyValue(field, field.defaultValue);
+        dirty.delete(field.path);
+        resets.add(field.path);
+      }
+      markAllRows();
+      updateButtons();
     });
 
-    saveBtn.addEventListener('click', () => {
-      putConfig(
-        { changes: Object.fromEntries(dirty), resets: [...resets] },
-        'Saved. Waiting for the server…',
-      );
+    restartBtn.addEventListener('click', async () => {
+      if (!confirm('Restart the server now? Unsaved changes will be lost.')) return;
+      msgEl.className = 'muted';
+      msgEl.textContent = 'Restarting…';
+      restartBtn.disabled = true;
+      try {
+        await fetch('/v1/restart', { method: 'POST' });
+        msgEl.className = 'ok';
+        msgEl.textContent = 'Restarting. Waiting for the server…';
+        await waitUntilUp();
+        location.reload();
+      } catch (err) {
+        msgEl.className = 'err';
+        msgEl.textContent = err.message || 'Restart failed';
+        restartBtn.disabled = false;
+      }
+    });
+
+    saveRestartBtn.addEventListener('click', () => {
+      putConfig({ changes: Object.fromEntries(dirty), resets: [...resets] });
     });
 
     load().catch((err) => {
@@ -641,14 +726,16 @@ function renderConfigPage(): string {
     wide: true,
     extraCss,
     page: 'config',
+    version: VERSION,
   });
 }
 
-export function createConfigRouter(hooks: ConfigRouterHooks = {}): Router {
+export function createConfigRouter(app: Application, hooks: ConfigRouterHooks = {}): Router {
   const router = Router();
 
   router.get('/config', (_req: Request, res: Response) => {
-    res.type('html').send(renderConfigPage());
+    const isAuthenticated = app.isAuthenticated();
+    res.type('html').send(renderConfigPage(isAuthenticated));
   });
 
   router.get('/v1/config', (_req: Request, res: Response) => {
@@ -701,12 +788,9 @@ export function createConfigRouter(hooks: ConfigRouterHooks = {}): Router {
       });
       logger.info({ paths: changedPaths }, 'Config updated via /config');
 
-      res.on('finish', () => {
-        hooks.onSaved?.();
-      });
       res.json({
         success: true,
-        message: 'Saved. Server is restarting so the new config loads.',
+        message: 'Saved.',
       });
     } catch (error) {
       if (error instanceof ZodError) {
@@ -718,6 +802,14 @@ export function createConfigRouter(hooks: ConfigRouterHooks = {}): Router {
       logger.error({ error }, "Can't save config via /config");
       res.status(400).json({ error: message });
     }
+  });
+
+  router.post('/v1/restart', (_req: Request, res: Response) => {
+    logger.info('Restart requested via /v1/restart — exiting now');
+    res.json({ success: true, message: 'Restarting…' });
+    setTimeout(() => {
+      try { hooks.onSaved?.(); } catch (e) { logger.error({ e }, 'Restart hook failed'); }
+    }, 100);
   });
 
   return router;

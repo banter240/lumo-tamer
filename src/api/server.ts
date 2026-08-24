@@ -17,6 +17,7 @@ import { RequestQueue } from './queue.js';
 import { initMetrics, type MetricsService } from '../app/metrics.js';
 import { createMetricsRouter } from './routes/metrics.js';
 import type { Application } from '../app/index.js';
+import { VERSION } from '../app/version.js';
 
 export class APIServer {
   private expressApp: express.Application;
@@ -32,6 +33,10 @@ export class APIServer {
       this.metrics = initMetrics(metricsConfig);
     }
     this.deps = this.buildDependencies();
+    this.app.setOnSessionInvalid(() => {
+      this.refreshAuthBindings();
+      logger.warn('Session invalidated after 401; waiting for /auth');
+    });
     this.setupMiddleware();
     this.setupRoutes();
   }
@@ -72,7 +77,7 @@ export class APIServer {
         logger.info('Signed out; waiting for /auth');
       },
     }));
-    this.expressApp.use(createConfigRouter({
+    this.expressApp.use(createConfigRouter(this.app, {
       onSaved: () => {
         restartAfterConfigSave();
       },
@@ -101,7 +106,7 @@ export class APIServer {
     return new Promise((resolve) => {
       this.expressApp.listen(this.serverConfig.port, () => {
         logger.info('========================================');
-        logger.info('lumo-tamer is ready!');
+        logger.info(`lumo-tamer v${VERSION} is ready!`);
         logger.info(`  base_url: http://localhost:${this.serverConfig.port}/v1`);
         logger.info(`  auth:     http://localhost:${this.serverConfig.port}/auth`);
         logger.info(`  config:   http://localhost:${this.serverConfig.port}/config`);
@@ -118,7 +123,7 @@ export class APIServer {
 
 /** Docker/k8s restart the PID. Local `tsx watch` only restarts on file changes. */
 function restartAfterConfigSave(): void {
-  logger.info('Shutting down after config save...');
+  logger.info('Restart triggered — shutting down...');
   if (existsSync('/.dockerenv') || process.env.KUBERNETES_SERVICE_HOST) {
     process.exit(0);
   }
@@ -126,12 +131,14 @@ function restartAfterConfigSave(): void {
     try {
       const entry = process.argv[1];
       if (entry) utimesSync(entry, new Date(), new Date());
+      logger.info('Poked tsx watch — waiting for restart');
     } catch (err) {
-      logger.warn({ err }, 'Could not poke tsx watch');
+      logger.warn({ err }, 'Could not poke tsx watch, respawning');
       respawnSelf();
     }
     process.exit(0);
   }
+  logger.info('Not in Docker/tsx-watch — respawning self');
   respawnSelf();
   process.exit(0);
 }
