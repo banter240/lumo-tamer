@@ -1,3 +1,13 @@
+## [0.7.0-dev.6](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.5...v0.7.0-dev.6) (2026-08-26)
+
+### Features
+
+* feat(web-ui): toast notifications replace toolbar messages
+
+  - Added toast container with slideIn animation (ok/err/muted variants).
+  - Save success/error: toast-only, no msgEl updates.
+  - Restart: muted toast on start, waiting, success (via localStorage post-reload), err on failure.
+
 ## [0.7.0-dev.5](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.4...v0.7.0-dev.5) (2026-08-26)
 
 ### Bug Fixes
