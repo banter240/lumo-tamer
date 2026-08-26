@@ -6,7 +6,9 @@
 
 const THEME_BOOT = `(function(){try{var t=localStorage.getItem('lumo-tamer-theme');if(t!=='light'&&t!=='dark'){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`;
 
-const THEME_BIND = `(function(){var btn=document.getElementById('themeToggle');if(!btn)return;var sun='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';var moon='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 14.3A8.4 8.4 0 1 1 9.7 3 7 7 0 0 0 21 14.3z"/></svg>';function paint(){var dark=document.documentElement.getAttribute('data-theme')==='dark';btn.innerHTML=dark?moon:sun;btn.setAttribute('aria-label',dark?'Dark mode':'Light mode');btn.title=dark?'Dark mode':'Light mode';}paint();btn.addEventListener('click',function(){var next=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',next);try{localStorage.setItem('lumo-tamer-theme',next);}catch(e){}paint();});})();`;
+const THEME_SUN = '<svg class="theme-icon-sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+const THEME_MOON = '<svg class="theme-icon-moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 14.3A8.4 8.4 0 1 1 9.7 3 7 7 0 0 0 21 14.3z"/></svg>';
+const THEME_BIND = `(function(){var btn=document.getElementById('themeToggle');if(!btn)return;btn.innerHTML='${THEME_SUN}${THEME_MOON}';function paint(){var dark=document.documentElement.getAttribute('data-theme')==='dark';var sun=btn.querySelector('.theme-icon-sun');var moon=btn.querySelector('.theme-icon-moon');if(sun)sun.style.display=dark?'none':'';if(moon)moon.style.display=dark?'':'none';btn.setAttribute('aria-label',dark?'Dark mode':'Light mode');btn.title=dark?'Dark mode':'Light mode';}paint();btn.addEventListener('click',function(){var next=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',next);try{localStorage.setItem('lumo-tamer-theme',next);}catch(e){}paint();});})();`;
 
 const REPO_URL = 'https://github.com/banter240/lumo-tamer';
 
@@ -120,8 +122,6 @@ button, .btn {
 button.secondary { background: var(--purple-soft); color: var(--purple); }
 button.secondary:hover { background: var(--purple-soft-hover); }
 button:hover, .btn:hover { background: var(--purple-hover); }
-button.secondary { background: var(--purple-soft); color: var(--purple); }
-button.secondary:hover { background: var(--purple-soft-hover); }
 button:disabled { opacity: 0.55; cursor: not-allowed; }
 .ok { color: var(--ok); }
 .err { color: var(--err); }

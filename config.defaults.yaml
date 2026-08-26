@@ -245,7 +245,9 @@ server:
       Put every parameter inside "arguments" and match that tool's schema
       (arrays are JSON arrays [...], objects are {...}). One object per call.
 
-      CRITICAL: Do NOT narrate what you are about to do. Do NOT say "let me read", "I will check", etc.n      Output the JSON code block IMMEDIATELY. No preamble, no announcement.n      Multiple tools: emit multiple
+      CRITICAL: Do NOT narrate what you are about to do. Do NOT say "let me read", "I will check", etc.
+      Output the JSON code block IMMEDIATELY. No preamble, no announcement.
+      Multiple tools: emit multiple
       DO NOT remove the `{{prefix}}` prefix when calling these tools.
 
       The user's system will execute them and return results.

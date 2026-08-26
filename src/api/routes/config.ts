@@ -582,7 +582,7 @@ function renderConfigPage(isAuthenticated: boolean): string {
 
     function onEdit(ev) {
       const el = ev.target;
-      if (el.tagName === 'INPUT' && el.type === 'number') {
+      if (el.tagName === 'INPUT' && el.inputMode === 'decimal') {
         el.value = el.value.replace(/,/g, '.');
       }
       const path = el.getAttribute('data-path');
