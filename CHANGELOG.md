@@ -1,3 +1,14 @@
+## [0.7.0-dev.5](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.4...v0.7.0-dev.5) (2026-08-26)
+
+### Bug Fixes
+
+* fix(ui): theme toggle wipes DOM, broken tool protocol newlines, stale number input check
+
+  - Theme toggle used btn.innerHTML, wiping DOM elements on every switch; now renders both icons once and toggles display.
+  - config.defaults.yaml had literal 'n' instead of newlines in custom tool protocol text.
+  - onEdit checked el.type === 'number' but inputs use type='text' inputmode='decimal'; switched to el.inputMode.
+  - Removed duplicate button.secondary CSS rules.
+
 ## [0.7.0-dev.4](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.3...v0.7.0-dev.4) (2026-08-24)
 
 ### Features
