@@ -65,8 +65,23 @@ function renderConfigPage(isAuthenticated: boolean): string {
     }
     .toolbar-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end; }
     .toolbar .hint { margin: 0; }
-    .toolbar-msg { margin: 0; grid-column: 1 / -1; }
-    .toolbar-msg:empty { display: none; }
+    #toast-container {
+      position: fixed; top: 1rem; right: 1rem; z-index: 1000;
+      display: flex; flex-direction: column; gap: 0.5rem;
+    }
+    .toast {
+      padding: 0.75rem 1rem; background: var(--card); border: 1px solid var(--line);
+      border-left: 4px solid var(--purple); border-radius: 6px;
+      box-shadow: var(--shadow); font-size: 0.85rem; color: var(--text);
+      animation: slideIn 0.3s ease; min-width: 200px; max-width: 300px;
+    }
+    .toast.ok { border-left-color: var(--ok); }
+    .toast.err { border-left-color: var(--err); }
+    .toast.muted { border-left-color: var(--muted); }
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
     .row.bool input[type=checkbox] {
       appearance: none; width: 1.2rem; height: 1.2rem; margin: 0; cursor: pointer;
       border: 1.5px solid var(--line); border-radius: 5px; background: var(--input);
@@ -222,6 +237,7 @@ function renderConfigPage(isAuthenticated: boolean): string {
       }, 5000);
     })();
   </script>
+  <div id="toast-container"></div>
   <div class="layout">
     <nav class="side" id="nav" aria-label="Setting categories"></nav>
     <div>
@@ -234,7 +250,6 @@ function renderConfigPage(isAuthenticated: boolean): string {
             <button id="saveRestart" type="button">Save</button>
             <button id="restartBtn" type="button" class="secondary">Restart</button>
           </div>
-          <span id="msg" class="muted toolbar-msg"></span>
         </div>
         <div class="pane-head" id="paneHead"></div>
         <div id="form"></div>
@@ -256,12 +271,25 @@ function renderConfigPage(isAuthenticated: boolean): string {
       const hasChanges = dirty.size > 0 || resets.size > 0;
       saveRestartBtn.disabled = !hasChanges;
     }
-    const msgEl = document.getElementById('msg');
     const filterEl = document.getElementById('filter');
     const dirty = new Map();
     const resets = new Set();
     let fields = [];
     let active = localStorage.getItem('lumo-tamer-config-cat') || 'api';
+
+    function showToast(message, type = 'ok') {
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+      const toast = document.createElement('div');
+      toast.className = 'toast ' + type;
+      toast.textContent = message;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
 
     function escText(s) {
       return String(s).replace(/[&<>]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -655,8 +683,6 @@ function renderConfigPage(isAuthenticated: boolean): string {
     filterEl.addEventListener('input', render);
 
     async function putConfig(payload) {
-      msgEl.className = 'muted';
-      msgEl.textContent = 'Saving…';
       saveRestartBtn.disabled = true;
       resetAllBtn.disabled = true;
       try {
@@ -670,12 +696,10 @@ function renderConfigPage(isAuthenticated: boolean): string {
         dirty.clear();
         resets.clear();
         updateButtons();
-        msgEl.className = 'ok';
-        msgEl.textContent = 'Saved.';
+        showToast('Configuration saved.', 'ok');
         await load();
       } catch (err) {
-        msgEl.className = 'err';
-        msgEl.textContent = err.message || 'Save failed';
+        showToast(err.message || 'Save failed', 'err');
         saveRestartBtn.disabled = false;
         resetAllBtn.disabled = false;
       }
@@ -695,18 +719,16 @@ function renderConfigPage(isAuthenticated: boolean): string {
 
     restartBtn.addEventListener('click', async () => {
       if (!confirm('Restart the server now? Unsaved changes will be lost.')) return;
-      msgEl.className = 'muted';
-      msgEl.textContent = 'Restarting…';
       restartBtn.disabled = true;
+      showToast('Restarting...', 'muted');
       try {
         await fetch('/v1/restart', { method: 'POST' });
-        msgEl.className = 'ok';
-        msgEl.textContent = 'Restarting. Waiting for the server…';
+        showToast('Waiting for the server...', 'muted');
         await waitUntilUp();
+        localStorage.setItem('lumo-tamer-toast', JSON.stringify({msg: 'Server restarted successfully.', type: 'ok'}));
         location.reload();
       } catch (err) {
-        msgEl.className = 'err';
-        msgEl.textContent = err.message || 'Restart failed';
+        showToast(err.message || 'Restart failed', 'err');
         restartBtn.disabled = false;
       }
     });
@@ -719,6 +741,15 @@ function renderConfigPage(isAuthenticated: boolean): string {
       statusEl.className = 'err';
       statusEl.textContent = err.message || 'Load failed';
     });
+
+    const storedToast = localStorage.getItem('lumo-tamer-toast');
+    if (storedToast) {
+      localStorage.removeItem('lumo-tamer-toast');
+      try {
+        const t = JSON.parse(storedToast);
+        showToast(t.msg, t.type);
+      } catch (_) {}
+    }
   </script>`;
   return htmlPage({
     title: 'Settings · lumo-tamer',
