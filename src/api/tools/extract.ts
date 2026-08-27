@@ -6,6 +6,7 @@
 import type { ParsedToolCall } from './types.js';
 import { isToolCallJson, parseToolCallJson } from './types.js';
 import { splitToolJsonObjects } from './tool-json-split.js';
+import { logger } from '../../app/logger.js';
 
 function skipWs(text: string, index: number): number {
   while (index < text.length && /\s/.test(text[index])) index++;
@@ -36,7 +37,24 @@ function parseLenientString(text: string, start: number): { value: string; end: 
   while (index < text.length) {
     const char = text[index];
     if (char === '\\' && index + 1 < text.length) {
-      value += text[index + 1];
+      const next = text[index + 1];
+      if (next === 'n') { value += '\n'; index += 2; continue; }
+      if (next === 't') { value += '\t'; index += 2; continue; }
+      if (next === 'r') { value += '\r'; index += 2; continue; }
+      if (next === 'b') { value += '\b'; index += 2; continue; }
+      if (next === 'f') { value += '\f'; index += 2; continue; }
+      if (next === '"') { value += '"'; index += 2; continue; }
+      if (next === '\\') { value += '\\'; index += 2; continue; }
+      if (next === '/') { value += '/'; index += 2; continue; }
+      if (next === 'u') {
+        const hex = text.slice(index + 2, index + 6);
+        if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+          value += String.fromCharCode(parseInt(hex, 16));
+          index += 6;
+          continue;
+        }
+      }
+      value += char + next;
       index += 2;
       continue;
     }
@@ -110,12 +128,14 @@ function parseLenientValue(
   return null;
 }
 
+/** Strict JSON parse, logging failures for debugging. */
 function fromStrictJson(text: string): ParsedToolCall | null {
   try {
     const parsed = JSON.parse(stripFenceNoise(text)) as unknown;
     if (!isToolCallJson(parsed)) return null;
     return parseToolCallJson(parsed);
-  } catch {
+  } catch (err) {
+    logger.debug({ text: text.substring(0, 500), error: (err as Error).message }, '[tools] JSON.parse failed, falling back to lenient');
     return null;
   }
 }

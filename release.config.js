@@ -21,14 +21,14 @@ export default {
             { type: "feat", section: "Features" },
             { type: "fix", section: "Bug Fixes" },
             { type: "perf", section: "Performance" },
-            { type: "docs", section: "Documentation" },
-            { type: "revert", hidden: true },
-            { type: "style", hidden: true },
-            { type: "chore", hidden: true },
-            { type: "refactor", hidden: true },
-            { type: "test", hidden: true },
-            { type: "build", hidden: true },
-            { type: "ci", hidden: true }
+            { type: "docs", section: "Documentation", effect: "changelog" },
+            { type: "revert", effect: "hidden" },
+            { type: "style", effect: "hidden" },
+            { type: "chore", effect: "hidden" },
+            { type: "refactor", effect: "hidden" },
+            { type: "test", effect: "hidden" },
+            { type: "build", effect: "hidden" },
+            { type: "ci", effect: "hidden" }
           ]
         },
         writerOpts: {
