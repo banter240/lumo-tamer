@@ -18,9 +18,36 @@ COPY tsconfig.json ./
 FROM golang:1.25-alpine AS go-builder
 
 WORKDIR /build
+# proxy.golang.org flakes in GHA with HTTP/2 INTERNAL_ERROR on zip downloads.
+ENV GOPROXY=https://proxy.golang.org,direct
+ENV GODEBUG=http2client=0
+
+COPY src/auth/login/go/go.mod src/auth/login/go/go.sum ./
+RUN set -eu; \
+    i=1; \
+    while [ "$i" -le 5 ]; do \
+      echo "go mod download (attempt $i)"; \
+      if go mod download; then exit 0; fi; \
+      echo "go mod download failed (attempt $i), retry in 10s"; \
+      i=$((i + 1)); \
+      sleep 10; \
+    done; \
+    echo "go mod download failed after 5 attempts"; \
+    exit 1
+
 COPY src/auth/login/go ./
 # CGO_ENABLED=0 produces a static binary - runs on Alpine, Debian, or native
-RUN CGO_ENABLED=0 go build -o proton-auth
+RUN set -eu; \
+    i=1; \
+    while [ "$i" -le 5 ]; do \
+      echo "go build (attempt $i)"; \
+      if CGO_ENABLED=0 go build -o proton-auth; then exit 0; fi; \
+      echo "go build failed (attempt $i), retry in 10s"; \
+      i=$((i + 1)); \
+      sleep 10; \
+    done; \
+    echo "go build failed after 5 attempts"; \
+    exit 1
 
 # ============================================================================
 # Builder stage - compile TypeScript

@@ -31,5 +31,5 @@ jobs:
           context: .
           push: false
           tags: lumo-tamer:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=lumo-tamer
+          cache-to: type=gha,mode=max,scope=lumo-tamer

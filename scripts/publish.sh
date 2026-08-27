@@ -43,7 +43,26 @@ docker_push() {
   return 1
 }
 
-docker build -t "${IMAGE}:${VERSION}" .
+# Reuse the CI job's GHA Buildx cache (same scope as .github/workflows/ci.yml).
+# --load puts the image in the local engine so docker tag/push work.
+docker_build() {
+  local tag="$1"
+  local i
+  for i in 1 2 3 4 5; do
+    docker buildx build \
+      --cache-from type=gha,scope=lumo-tamer \
+      --cache-to type=gha,mode=max,scope=lumo-tamer \
+      --load \
+      -t "$tag" \
+      . && return 0
+    echo "docker build failed (attempt $i), retry in 15s" >&2
+    sleep 15
+  done
+  echo "docker build timed out: $tag" >&2
+  return 1
+}
+
+docker_build "${IMAGE}:${VERSION}"
 docker_push "${IMAGE}:${VERSION}"
 
 if [[ "$VERSION" == *-* ]]; then
