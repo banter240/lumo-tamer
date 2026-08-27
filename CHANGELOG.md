@@ -1,3 +1,26 @@
+## [0.7.0-dev.7](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.6...v0.7.0-dev.7) (2026-08-27)
+
+### Bug Fixes
+
+* fix(api): decode JSON escapes in lenient tool-call parser
+
+  parseLenientString copied the character after backslash as-is, so
+  \n became n. Decode the standard JSON escapes (including \uXXXX)
+  so tool arguments with newlines survive the lenient path. Log
+  JSON.parse failures before that fallback.
+
+  Map conventionalcommits changelog types to effect: hidden is ignored
+  by preset 10 and would leak chore/ci commits into release notes.
+* fix(ci): retry Go module fetch and reuse Docker cache on release
+
+  proxy.golang.org aborted juniper@v0.13.1 with HTTP/2 INTERNAL_ERROR
+  during publish.sh docker build, so 0.7.0-dev.7 never shipped.
+
+  Download modules in their own layer with GOPROXY=direct fallback,
+  disable Go HTTP/2, and retry go mod download / go build. Release
+  builds now reuse the CI job's Buildx cache instead of a cold
+  docker build.
+
 ## [0.7.0-dev.6](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.5...v0.7.0-dev.6) (2026-08-26)
 
 ### Features
