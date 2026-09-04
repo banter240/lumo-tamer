@@ -1,3 +1,22 @@
+## [0.7.0-dev.8](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.7...v0.7.0-dev.8) (2026-09-04)
+
+### Features
+
+* feat: sidecar login, docker.sock self-update, and token-estimate SSOT
+
+  Drop Watchtower. The tamer container checks GitHub Releases and, with
+  docker.sock mounted, pulls GHCR and recreates itself via a one-shot
+  helper. Stable tracks main (:latest); Settings save hot-reloads the
+  update config.
+
+  Docker password login that hits Proton 2028 no longer launches Chrome
+  inside the image. Persist launch:false and CDP http://browser:9222,
+  then remove only the sidecar. Permanent refresh failures clear the
+  vault so /auth asks for a re-login.
+
+  Bake the 1.45 Lumo calibration into auto prompt-token estimates so
+  factor 1.0 is that baseline. Centralize app tunables in src/app/const.ts.
+
 ## [0.7.0-dev.7](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.6...v0.7.0-dev.7) (2026-08-27)
 
 ### Bug Fixes
