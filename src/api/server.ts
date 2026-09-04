@@ -1,7 +1,8 @@
 import { spawn } from 'child_process';
-import { existsSync, readFileSync, utimesSync } from 'fs';
+import { readFileSync, utimesSync } from 'fs';
 import express from 'express';
 import { getServerConfig, getMetricsConfig, authConfig } from '../app/config.js';
+import { isContainerEnv } from '../app/env.js';
 import { resolveDataPath } from '../app/paths.js';
 import { logger } from '../app/logger.js';
 import { setupAuthMiddleware, setupLoggingMiddleware, setupMetricsMiddleware, setupReadyMiddleware } from './middleware.js';
@@ -12,6 +13,8 @@ import { createChatCompletionsRouter } from './routes/chat-completions/index.js'
 import { createResponsesRouter } from './routes/responses/index.js';
 import { createAuthRouter } from './routes/auth.js';
 import { createConfigRouter } from './routes/config.js';
+import { createUpdatesRouter } from './routes/updates.js';
+import { startUpdateChecker } from '../app/updates.js';
 import { EndpointDependencies } from './types.js';
 import { RequestQueue } from './queue.js';
 import { initMetrics, type MetricsService } from '../app/metrics.js';
@@ -35,7 +38,7 @@ export class APIServer {
     this.deps = this.buildDependencies();
     this.app.setOnSessionInvalid(() => {
       this.refreshAuthBindings();
-      logger.warn('Session invalidated after 401; waiting for /auth');
+      logger.warn('Session invalidated; waiting for /auth re-login');
     });
     this.setupMiddleware();
     this.setupRoutes();
@@ -76,7 +79,9 @@ export class APIServer {
         this.refreshAuthBindings();
         logger.info('Signed out; waiting for /auth');
       },
+      getSessionNotice: () => this.app.getSessionNotice(),
     }));
+    this.expressApp.use(createUpdatesRouter());
     this.expressApp.use(createConfigRouter(this.app, {
       onSaved: () => {
         restartAfterConfigSave();
@@ -96,6 +101,7 @@ export class APIServer {
       syncInitialized: this.app.isSyncInitialized(),
       authManager: this.app.getAuthManager(),
       vaultPath,
+      sessionNotice: this.app.getSessionNotice(),
     };
   }
 
@@ -115,6 +121,7 @@ export class APIServer {
           logger.warn('Not logged in yet. Open /auth and sign in to Proton.');
         }
         logger.info('========================================\n');
+        startUpdateChecker();
         resolve();
       });
     });
@@ -124,7 +131,7 @@ export class APIServer {
 /** Docker/k8s restart the PID. Local `tsx watch` only restarts on file changes. */
 function restartAfterConfigSave(): void {
   logger.info('Restart triggered — shutting down...');
-  if (existsSync('/.dockerenv') || process.env.KUBERNETES_SERVICE_HOST) {
+  if (isContainerEnv()) {
     process.exit(0);
   }
   if (parentIsTsxWatch()) {

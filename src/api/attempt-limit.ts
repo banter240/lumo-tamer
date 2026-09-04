@@ -1,4 +1,5 @@
 import type { Request } from 'express';
+import { AUTH } from '../app/const.js';
 
 export function clientIp(req: Request): string {
   return req.ip || req.socket.remoteAddress || 'unknown';
@@ -7,7 +8,7 @@ export function clientIp(req: Request): string {
 /** Sliding window: first hit opens a window; further hits count until max. */
 export function createAttemptGate(
   maxAttempts: number,
-  windowMs = 10 * 60 * 1000,
+  windowMs = AUTH.ATTEMPT_WINDOW_MS,
 ): (ip: string) => boolean {
   const attempts = new Map<string, { count: number; resetAt: number }>();
   return (ip: string): boolean => {

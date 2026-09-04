@@ -65,7 +65,7 @@ describe('LumoClient (Lumo 2.0 chat/completions)', () => {
           completion_tokens: 2,
           applied_limit_category: 'max',
           model: 'lumo-max',
-          prompt_tokens: 62, // Estimated from request body size
+          prompt_tokens: 90, // auto estimate: UTF-8 bytes / (4/1.45)
         });
       });
 

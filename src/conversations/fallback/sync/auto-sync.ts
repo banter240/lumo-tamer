@@ -10,14 +10,12 @@
  * (see ~/WebClients/applications/lumo/src/app/redux/sagas/conversations.ts)
  */
 
+import { AUTO_SYNC } from '../../../app/const.js';
 import { logger } from '../../../app/logger.js';
 import { getSyncService, type SyncService } from './sync-service.js';
 import { getMetrics } from '../../../app/metrics.js';
 
-// Timing constants (not configurable - sensible defaults)
-const DEBOUNCE_MS = 5000;      // Wait after last change before syncing
-const MIN_INTERVAL_MS = 30000; // Minimum interval between syncs
-const MAX_DELAY_MS = 60000;    // Force sync after this delay regardless
+const { DEBOUNCE_MS, MIN_INTERVAL_MS, MAX_DELAY_MS } = AUTO_SYNC;
 
 /**
  * Auto-Sync Service

@@ -10,6 +10,7 @@ export interface EndpointDependencies {
   syncInitialized?: boolean;
   authManager?: AuthManager;
   vaultPath?: string;
+  sessionNotice?: string | null;
 }
 
 // Chat Completions API types

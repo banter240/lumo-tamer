@@ -185,11 +185,11 @@ Push to `dev` or `main` runs tests, then semantic-release (tag, CHANGELOG, GitHu
 - `dev` → `v0.7.0-dev.N` and `…/lumo-tamer:dev` (pre-release)
 - `main` → `v0.7.0` and `…/lumo-tamer:latest`
 
-The host runs a **pinned image**, not a git branch. Copy `.env.example` to `.env` and set `LUMO_TAMER_IMAGE`. Create `config.yaml` before the first `compose up` (Docker would otherwise create a directory at that path).
+The host runs a **pinned image**, not a git branch. Copy `.env.example` to `.env` and set `LUMO_TAMER_IMAGE` (`:latest` / main, or `:dev`). Create `config.yaml` before the first `compose up` (Docker would otherwise create a directory at that path).
+
+Self-update uses the Docker socket on the tamer container (see [Updates](updates.md)). There is no standing updater.
 
 ```bash
-docker pull ghcr.io/banter240/lumo-tamer:dev   # or :0.7.0 / :latest
+docker pull ghcr.io/banter240/lumo-tamer:latest   # or :dev / :0.7.0
 docker compose up -d tamer
 ```
-
-Watchtower is optional (`--profile watch`) and only logs.

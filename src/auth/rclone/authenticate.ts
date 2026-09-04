@@ -8,6 +8,7 @@
 
 import * as readline from 'readline';
 import { parseRcloneSection } from './parser.js';
+import { AUTH } from '../../app/const.js';
 import { logger } from '../../app/logger.js';
 import { readVault, writeVault, configuredVault } from '../vault/index.js';
 import type { StoredTokens } from '../types.js';
@@ -87,7 +88,7 @@ export async function runRcloneAuthentication(): Promise<void> {
         keyPassword: rcloneTokens.keyPassword,
         extractedAt,
         // Set expiresAt for unified validity checking (conservative 12h estimate)
-        expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
+        expiresAt: new Date(Date.now() + AUTH.DEFAULT_ACCESS_TOKEN_TTL_SEC * 1000).toISOString(),
         userKeys: existingTokens.userKeys,
         masterKeys: existingTokens.masterKeys,
     };

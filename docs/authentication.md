@@ -75,7 +75,7 @@ The first SRP attempt uses Lumo's own app version (`web-lumo`). `login.appVersio
 **Code 2028 / "unusual activity" / appeal-abuse**
 - Proton locked password API for this account/IP. Retrying `/auth/v4` will not help.
 - Desktop: tamer opens a Chrome window. Log in there; wait until `/auth` says logged in.
-- Docker: start the browser sidecar (see [Headless / Docker](#headless--docker)), log in at `:3001`, then `tamer auth browser`. Stop the sidecar afterwards.
+- Docker: start the browser sidecar (see [Headless / Docker](#headless--docker)), log in at `:3001`, then `tamer auth browser`. Stop **and remove** only the sidecar afterwards; leave `lumo-tamer` (port 3003) running.
 
 ---
 
@@ -100,9 +100,11 @@ Cookies live in `sessions/browser-profile` (small). The browser binary is whatev
 
 Start only `tamer` and open `http://<host>:3003/auth`. Type Proton email, password, and 2FA. The server starts without a vault; chat returns 503 until this page succeeds.
 
-`/auth` uses password SRP (Lumo scope when Proton allows it). CAPTCHA retries Drive (chat only). Code 2028 (abuse lock) cannot be retried on the same API; on a **desktop** tamer then opens a normal Chrome window. Inside Docker that window is invisible, so you start the optional sidecar yourself.
+`/auth` uses password SRP (Lumo scope when Proton allows it). CAPTCHA retries Drive (chat only). Code 2028 (abuse lock) cannot be retried on the same API; on a **desktop** tamer then opens a normal Chrome window. Inside Docker it does **not** try to launch Chrome (the image has none); the `/auth` error and “If login fails” list tell you to start the sidecar.
 
-The sidecar is a full Chromium+noVNC image (~1 GB). That is a lot just for authentication. Compose keeps it behind `--profile browser` so a normal `up` does not start it. Tamer does not start Compose for you.
+The sidecar is a full Chromium+noVNC image (~1 GB). That is a lot just for authentication. Compose keeps it behind `--profile browser` so a normal `up` does not start it. Tamer does not start Compose for you. The tamer image has no Chrome: `launch: true` or `npx playwright install chromium` inside the container will not work.
+
+`tamer auth browser` in Docker connects over CDP (`http://browser:9222`), then writes this into `config.yaml` (do not hand-edit `launch: true` or `localhost:9222`):
 
 ```yaml
 auth:
@@ -112,19 +114,48 @@ auth:
     cdpEndpoint: "http://browser:9222"
 ```
 
+#### Start, extract, reload
+
+From the compose directory (often `/opt/lumo-tamer`):
+
 ```bash
 docker compose --profile browser up -d browser
 # http://<host>:3001  -> log in at lumo.proton.me (CAPTCHA and security keys work)
-docker compose run --rm tamer auth browser   # when prompted: http://browser:9222
-docker compose --profile browser stop browser
+docker compose run --rm -it tamer auth browser   # CDP default: http://browser:9222
+# Reload http://<host>:3003/auth — the running server loads the vault. Do not restart tamer.
 ```
 
-Log in at `:3001`, then extract. Stop the sidecar when the vault exists. Do not leave it running.
+Portainer: start the container named `lumo-tamer-browser` (enable profile `browser` on the stack, or run the `up` command over SSH). Open `:3001`. Extract from **Console** on `lumo-tamer`: `tamer auth browser`. Do not stop the stack.
+
+#### Stop and delete only the sidecar
+
+Leave `lumo-tamer` (port 3003) running.
+
+```bash
+docker compose --profile browser stop browser
+docker compose --profile browser rm -f browser
+```
+
+Image and Chromium profile as well (next start builds/logs in a fresh profile):
+
+```bash
+docker rmi $(docker images -q --filter reference='*lumo-tamer*browser*') 2>/dev/null
+# optional profile:
+# rm -rf ./browser-data
+```
+
+Check:
+
+```bash
+docker ps -a --filter name=lumo-tamer-browser
+```
+
+Empty = gone. Do not `docker compose down` (that stops tamer too). In Portainer: stop and remove **only** `lumo-tamer-browser`; optionally delete that image and the host folder `browser-data`.
 
 ### Limitations
 
 - **Needs a display** for `launch: true` (normal desktop). Headless servers use CDP or `login`.
-- **Re-auth**: if the refresh token is revoked, run `tamer auth` again (window opens; profile may still be logged in).
+- **Re-auth**: if the refresh token is revoked, run `tamer auth` again (desktop: window opens; Docker: start the sidecar, extract, then remove it).
 
 ### Config
 
@@ -132,15 +163,16 @@ Log in at `:3001`, then extract. Stop the sidecar when the vault exists. Do not 
 auth:
   method: browser
   browser:
-    cdpEndpoint: "http://localhost:9222"  # or "http://browser:9222" for Docker
+    launch: true                          # desktop window; false in Docker
+    cdpEndpoint: "http://localhost:9222"  # Docker sidecar: http://browser:9222
 ```
 
 ### Troubleshooting
 
 **"No browser contexts found. Is the browser running?"**
-- Verify the browser is running and the CDP endpoint is reachable: `curl http://localhost:9222/json/version`
+- Verify the sidecar is up: `curl http://browser:9222/json/version` from the tamer container (desktop: `http://localhost:9222`)
 - If the browser is on a different machine, you may need to forward the port, e.g. with socat: `socat TCP-LISTEN:9222,fork TCP:<remote-host>:<remote-port>`
-- Check firewall/network settings
+- Check firewall/network settings. `localhost:9222` from inside Docker is the tamer container, not the sidecar.
 
 **"Login timeout. Please log in and try again."**
 - The browser was reached but you're not logged in to Lumo. Log in to https://lumo.proton.me in the browser, then re-run `tamer auth browser`.
@@ -251,6 +283,10 @@ All methods store a `refreshToken` and use Proton's `/auth/refresh` endpoint:
 - On a schedule (every `intervalHours`)
 - On 401 errors (if `onError: true`)
 
+If Proton rejects the refresh (401/403/422) or there is no refresh token, tamer **drops the session**: the vault is deleted, chat returns 503, `/health` shows `auth.available: false`, and `/auth` shows the login form with “Proton session expired… Log in again.” That is the re-login. Transient errors (network, 5xx) retry; three failures in a row also drop the session.
+
+Do not expect `/auth` to stay “signed in” with a dead refresh token. Log in on that page (or the Docker sidecar if Proton 2028 blocks the password form).
+
 ### Manual Refresh
 
 - **CLI command**: `/refreshtokens`
@@ -261,6 +297,7 @@ All methods store a `refreshToken` and use Proton's `/auth/refresh` endpoint:
 When token refresh fails, make sure that:
 - Your browser/lumo tabs used for the `browser` auth method are closed after extraction.
 - You don't reuse the same tokens (from `browser` or `rclone`) across different machines.
+- After a drop, `/auth` is the re-login. Chat clients should treat 401 `auth_required` / 503 the same way.
 
 ---
 

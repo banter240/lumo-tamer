@@ -8,10 +8,15 @@
  * - Logout with session revocation
  */
 
+import { AUTH } from '../app/const.js';
 import { logger } from '../app/logger.js';
 import { createProtonApi, type ProtonApiWithRefresh } from './api-factory.js';
-import { logout as performLogout } from './logout.js';
+import { logout as performLogout, deleteTokenCache } from './logout.js';
+import { isPermanentRefreshFailure, SESSION_EXPIRED_NOTICE } from './token-refresh.js';
 import type { IAuthProvider, ProtonApi } from './types.js';
+
+/** Transient refresh errors (5xx, network) may recover; this many in a row still drop the session. */
+export const MAX_CONSECUTIVE_REFRESH_FAILURES = AUTH.MAX_REFRESH_FAILURES;
 
 export interface AuthManagerOptions {
     /** Auth provider instance */
@@ -22,13 +27,13 @@ export interface AuthManagerOptions {
     autoRefresh?: {
         /** Enable scheduled refresh */
         enabled: boolean;
-        /** Refresh interval in hours (default: 20 for browser, provider handles SRP/rclone) */
+        /** Refresh interval in hours (YAML default; AUTH.DEFAULT_REFRESH_INTERVAL_HOURS if omitted) */
         intervalHours?: number;
         /** Enable refresh on 401 errors (default: true) */
         onError?: boolean;
     };
-    /** Called when session becomes invalid (refresh fails after 401) */
-    onSessionInvalid?: () => void;
+    /** Called when session becomes invalid (refresh token dead or too many failures) */
+    onSessionInvalid?: (reason?: string) => void;
 }
 
 export class AuthManager {
@@ -40,14 +45,15 @@ export class AuthManager {
     private isRefreshing = false;
     private lastRefreshFailure: { at: string; error: string } | null = null;
     private consecutiveFailures = 0;
-    private onSessionInvalid?: () => void;
+    private onSessionInvalid?: (reason?: string) => void;
+    private invalidated = false;
 
     constructor(options: AuthManagerOptions) {
         this.provider = options.provider;
         this.vaultPath = options.vaultPath;
         this.autoRefreshConfig = {
             enabled: options.autoRefresh?.enabled ?? false,
-            intervalHours: options.autoRefresh?.intervalHours ?? 20,
+            intervalHours: options.autoRefresh?.intervalHours ?? AUTH.DEFAULT_REFRESH_INTERVAL_HOURS,
             onError: options.autoRefresh?.onError ?? true,
         };
         this.onSessionInvalid = options.onSessionInvalid;
@@ -88,7 +94,7 @@ export class AuthManager {
             return;
         }
 
-        const intervalHours = this.autoRefreshConfig.intervalHours ?? 20;
+        const intervalHours = this.autoRefreshConfig.intervalHours ?? AUTH.DEFAULT_REFRESH_INTERVAL_HOURS;
         const intervalMs = intervalHours * 60 * 60 * 1000;
 
         logger.info(
@@ -101,6 +107,7 @@ export class AuthManager {
                 await this.refreshNow();
             } catch (error) {
                 logger.error({ error, consecutiveFailures: this.consecutiveFailures }, 'Scheduled token refresh failed');
+                await this.maybeInvalidateAfterRefreshFailure(error);
             }
         }, intervalMs);
 
@@ -155,9 +162,37 @@ export class AuthManager {
             const message = error instanceof Error ? error.message : String(error);
             this.lastRefreshFailure = { at: new Date().toISOString(), error: message };
             this.consecutiveFailures++;
+            await this.maybeInvalidateAfterRefreshFailure(error);
             throw error;
         } finally {
             this.isRefreshing = false;
+        }
+    }
+
+    /**
+     * Drop the local vault and in-memory session so /auth shows the login form.
+     * Remote revoke is skipped: the refresh token is already dead.
+     */
+    async invalidateSession(reason = SESSION_EXPIRED_NOTICE): Promise<void> {
+        if (this.invalidated) return;
+        this.invalidated = true;
+        this.stopAutoRefresh();
+        logger.warn({ reason }, 'Session invalid; deleting vault and waiting for /auth');
+        try {
+            await deleteTokenCache(this.vaultPath);
+        } catch (error) {
+            logger.warn({ error }, 'Could not delete vault after refresh failure');
+        }
+        this.onSessionInvalid?.(reason);
+    }
+
+    private async maybeInvalidateAfterRefreshFailure(error: unknown): Promise<void> {
+        if (this.invalidated) return;
+        if (
+            isPermanentRefreshFailure(error)
+            || this.consecutiveFailures >= MAX_CONSECUTIVE_REFRESH_FAILURES
+        ) {
+            await this.invalidateSession();
         }
     }
 
@@ -173,8 +208,7 @@ export class AuthManager {
             };
         } catch (error) {
             logger.error({ error, consecutiveFailures: this.consecutiveFailures }, 'Failed to refresh tokens after 401');
-            logger.warn('Session is now invalid. Dropping session; waiting for /auth re-login.');
-            this.onSessionInvalid?.();
+            await this.invalidateSession();
             return null;
         }
     }
@@ -186,10 +220,14 @@ export class AuthManager {
      */
     getHealth() {
         const status = this.provider.getStatus();
+        const refreshDead = Boolean(
+            this.invalidated
+            || (this.lastRefreshFailure && isPermanentRefreshFailure(new Error(this.lastRefreshFailure.error))),
+        );
         return {
             available: true,
             method: status.method,
-            valid: status.valid,
+            valid: status.valid && !refreshDead && this.consecutiveFailures < MAX_CONSECUTIVE_REFRESH_FAILURES,
             details: status.details,
             warnings: status.warnings,
             lastRefreshFailure: this.lastRefreshFailure,

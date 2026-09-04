@@ -56,7 +56,7 @@ cp -n .env.example .env
 touch config.yaml
 ```
 
-The container runs the GHCR tag in `.env` (`LUMO_TAMER_IMAGE`), not this git checkout. Default is `:dev`.
+The container runs the GHCR tag in `.env` (`LUMO_TAMER_IMAGE`), not this git checkout. Default is `:latest` (main). Self-update: [Updates](updates.md).
 
 #### Step 2: Configure
 
@@ -90,7 +90,7 @@ Optional: [web config](config.md) at `http://<host>:3003/config` (web search, re
 <details>
 <summary><strong>I'm asked to enter a CAPTCHA</strong></summary>
 
-Log in to Proton in a regular browser from the same IP first. This often clears the challenge. If you're still hit with a CAPTCHA challenge after, you might want to try an [alternative auth method](authentication.md).
+Log in to Proton in a regular browser from the same IP first. This often clears the challenge. If you're still hit with a CAPTCHA challenge or Proton 2028 after, use the [Docker sidecar](authentication.md#headless--docker) (start, extract, then remove only `lumo-tamer-browser`).
 </details>
 
 <details>
@@ -173,7 +173,7 @@ Enter your Proton email, password, and 2FA code (if enabled).
 <details>
 <summary><strong>I'm asked to enter a CAPTCHA</strong></summary>
 
-Log in to Proton in a regular browser from the same IP first. This often clears the challenge. If you're still hit with a CAPTCHA challenge after, you might want to try an [alternative auth method](authentication.md).
+Log in to Proton in a regular browser from the same IP first. This often clears the challenge. If you're still hit with a CAPTCHA challenge or Proton 2028 after, use the [Docker sidecar](authentication.md#headless--docker) (start, extract, then remove only `lumo-tamer-browser`).
 </details>
 
 <details>

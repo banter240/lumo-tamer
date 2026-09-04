@@ -35,6 +35,7 @@ import { buildChatCompletionsBody, LUMO_CHAT_ENDPOINT, type LumoCompletionTarget
 import { V2StreamProcessor } from './v2-stream.js';
 import { selectNativeTools } from './native-tools.js';
 import { getInstructionsConfig, getLogConfig, getConfigMode, getCustomToolsConfig, getEnableWebSearch, getServerConfig } from '../app/config.js';
+import { estimatePromptTokens } from '../app/token-estimate.js';
 import { injectInstructionsIntoTurns } from './instructions.js';
 import { NativeToolCallProcessor, type NativeToolCallResult } from '../api/tools/native-tool-call-processor.js';
 import { postProcessTitle } from '@lumo/lib/lumo-api-client/utils.js';
@@ -280,12 +281,11 @@ export class LumoClient {
         // Proton doesn't report prompt_tokens; estimate from request body so
         // clients like OpenCode can make compaction decisions.
         const bytes = Buffer.byteLength(JSON.stringify(body), 'utf8');
-        const estimator = getServerConfig().promptTokenEstimation;
-        const factor = getServerConfig().promptTokenEstimationFactor ?? 1.0;
-        const divisor = estimator === 'off'
-          ? Infinity  // Results in 0 tokens
-          : (typeof estimator === 'number' ? estimator : 4);  // auto: 4 bytes/token average
-        const estimatedPromptTokens = divisor === Infinity ? 0 : Math.ceil((bytes / divisor) * factor);
+        const estimatedPromptTokens = estimatePromptTokens(
+          bytes,
+          getServerConfig().promptTokenEstimation,
+          getServerConfig().promptTokenEstimationFactor ?? 1.0,
+        );
 
         const stream = (await this.protonApi({
             url: params.endpoint,

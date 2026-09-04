@@ -7,6 +7,7 @@ import { tmpdir } from 'os';
 import { createConfigRouter } from '../../src/api/routes/config.js';
 import { setupAuthMiddleware, setupReadyMiddleware } from '../../src/api/middleware.js';
 import { setDataDir } from '../../src/app/paths.js';
+import { getUpdatesConfig } from '../../src/app/config.js';
 import { listen, closeServer } from '../helpers/listen.js';
 import type { Application } from '../../src/app/index.js';
 
@@ -72,6 +73,9 @@ describe('config page', () => {
     expect(html).toContain('href="/auth"');
     expect(html).toContain('github.com/banter240/lumo-tamer');
     expect(html).toContain('Reset to defaults');
+    expect(html).toContain('id="updateChip"');
+    expect(html).toContain('/v1/update');
+    expect(html).toContain('lumo-tamer-config-saved');
     expect(html).toContain('Reset all visible fields to defaults? This does not save');
     expect(html).not.toContain('super-secret-key');
   });
@@ -98,6 +102,16 @@ describe('config page', () => {
     const yaml = readFileSync(join(tmpDir, 'config.yaml'), 'utf8');
     expect(yaml).toContain('enableWebSearch: true');
     expect(yaml).toContain('super-secret-key');
+  });
+
+  it('hot-reloads updates.channel on save without restart', async () => {
+    const res = await fetch(`${baseUrl}/v1/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ changes: { 'updates.channel': 'dev' } }),
+    });
+    expect(res.status).toBe(200);
+    expect(getUpdatesConfig().channel).toBe('dev');
   });
 
   it('resets every override except the API key', async () => {

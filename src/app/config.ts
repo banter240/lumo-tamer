@@ -16,6 +16,7 @@ function mergeConfigLayers(...sources: unknown[]): Record<string, unknown> {
 import bytes from 'bytes';
 import { fatalExit, loadConfigYaml, loadDefaultsYaml } from './config-file.js';
 import { isDefaultTierAllowed } from '../lumo-client/model-tier.js';
+import { AUTH, UPDATES } from './const.js';
 
 // Load defaults from YAML (single source of truth)
 const configDefaults = loadDefaultsYaml();
@@ -128,7 +129,7 @@ const authConfigSchema = z.object({
   }),
   autoRefresh: z.object({
     enabled: z.boolean(),
-    intervalHours: z.number().min(1).max(24),
+    intervalHours: z.number().min(AUTH.REFRESH_INTERVAL_HOURS_MIN).max(AUTH.REFRESH_INTERVAL_HOURS_MAX),
     onError: z.boolean(),
   }),
   browser: z.object({
@@ -144,11 +145,22 @@ const authConfigSchema = z.object({
 });
 
 const commandsConfigSchema = z.object({ enabled: z.boolean(), wakeword: z.string() });
+
+const updatesConfigSchema = z.object({
+  enabled: z.boolean(),
+  channel: z.enum(['stable', 'dev']),
+  repository: z.string().min(1),
+  checkIntervalHours: z.number().min(UPDATES.CHECK_INTERVAL_HOURS_MIN).max(UPDATES.CHECK_INTERVAL_HOURS_MAX),
+  autoApply: z.boolean(),
+  dockerSocket: z.string(),
+});
+
 const sharedMergedFields = {
   auth: authConfigSchema,
   log: logConfigSchema,
   conversations: conversationsConfigSchema,
   commands: commandsConfigSchema,
+  updates: updatesConfigSchema,
   enableWebSearch: z.boolean(),
 };
 
@@ -272,6 +284,14 @@ export function initConfig(mode: ConfigMode): void {
   // at module load time, when logger is available
 }
 
+/** Re-read config.yaml into the live process (Save). Listen port still needs Restart. */
+export function reloadConfig(): void {
+  if (!configMode) throw new Error('Config not initialized. Call initConfig() first.');
+  userConfigCache = null;
+  usingConfigDefaults = false;
+  config = loadMergedConfig(configMode);
+}
+
 export function getConfigMode(): ConfigMode | null {
   return configMode;
 }
@@ -288,7 +308,9 @@ function getConfig(): MergedConfig {
 export const getLogConfig = () => getConfig().log;
 export const getConversationsConfig = () => getConfig().conversations;
 export const getCommandsConfig = () => getConfig().commands;
+export const getUpdatesConfig = () => getConfig().updates;
 export const getEnableWebSearch = () => getConfig().enableWebSearch;
+export type UpdatesConfig = z.infer<typeof updatesConfigSchema>;
 
 // Server-specific getters
 export function getServerConfig(): ServerMergedConfig {

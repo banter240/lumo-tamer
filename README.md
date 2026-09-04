@@ -359,7 +359,9 @@ The server implements a subset of OpenAI-compatible endpoints and has so far bee
 | `POST /v1/responses` | [OpenAI responses API](https://platform.openai.com/docs/api-reference/responses/create) |
 | `GET /v1/models` | List available models (`lumo`, `lumo-lite`, `lumo-max`) |
 | `GET /v1/models/:id` | Single model |
-| `GET /health` | Health check (`status`, queue, auth) |
+| `GET /health` | Health check (`status`, version, queue, auth, update) |
+| `GET /v1/update` | GitHub update check (`?refresh=1` to bypass cache) |
+| `POST /v1/update` | Pull GHCR and recreate this container (needs docker.sock) |
 | `GET /auth` | Proton login page (Docker / Portainer) |
 | `POST /auth/login` | Same login, JSON body |
 | `POST /auth/logout` | Sign out (no API key; server stays up) |
@@ -440,16 +442,25 @@ cp -n .env.example .env
 touch config.yaml
 ```
 
-The box runs the GHCR tag in `.env` (`LUMO_TAMER_IMAGE`), not the git branch. Default is `:dev`. Update later:
+The box runs the GHCR tag in `.env` (`LUMO_TAMER_IMAGE`), not the git branch. Default is `:latest` (main / stable). **dev** is `:dev`.
+
+Self-update is optional and uses **this** container plus the Docker socket (no extra updater). Full split: [Updates](docs/updates.md).
 
 ```bash
-docker pull ghcr.io/banter240/lumo-tamer:dev
+# .env — which GHCR tag this box runs (stable/main → :latest, dev → :dev)
+# LUMO_TAMER_IMAGE=ghcr.io/banter240/lumo-tamer:latest
+```
+
+Compose already bind-mounts `/var/run/docker.sock` on tamer. Settings → Updates stays in `config.yaml`. The **Update** button / `/update apply` pull that tag and recreate `lumo-tamer`.
+
+Manual pull still works:
+
+```bash
+docker pull ghcr.io/banter240/lumo-tamer:latest
 docker compose up -d tamer
 ```
 
 `docker compose build tamer` is only if you build the image yourself.
-
-Watchtower is optional (`docker compose --profile watch up -d`) and only logs; it does not recreate the container.
 
 ### Configure
 
@@ -485,11 +496,24 @@ If Proton still blocks password login, start the optional Chromium sidecar (~1 G
 ```bash
 docker compose --profile browser up -d browser
 # open http://<host>:3001  -> log in at lumo.proton.me
-docker compose run --rm tamer auth browser   # CDP http://browser:9222
-docker compose --profile browser stop browser
+docker compose run --rm -it tamer auth browser   # CDP http://browser:9222
+# Reload http://<host>:3003/auth — tamer picks up the vault. Do not restart it.
 ```
 
-Do not leave that container running. Details: [authentication](docs/authentication.md#headless--docker).
+That writes `auth.method: browser`, `auth.browser.launch: false`, and `cdpEndpoint: http://browser:9222`. Do not set `launch: true` or `localhost:9222` inside Docker.
+
+Then remove **only** the sidecar (leave `lumo-tamer` on port 3003):
+
+```bash
+docker compose --profile browser stop browser
+docker compose --profile browser rm -f browser
+# optional — image + Chromium profile (next start is clean):
+# docker rmi $(docker images -q --filter reference='*lumo-tamer*browser*') 2>/dev/null
+# rm -rf ./browser-data
+docker ps -a --filter name=lumo-tamer-browser   # empty = gone
+```
+
+Portainer: start/stop/remove `lumo-tamer-browser` only. Console on `lumo-tamer` can run `tamer auth browser`. Do not stop the stack. Details: [authentication](docs/authentication.md#headless--docker).
 </details>
 
 ### Run
@@ -514,6 +538,7 @@ See [docs/](docs/) for detailed documentation:
 
 - [Authentication](docs/authentication.md): Auth methods, setup and troubleshooting
 - [Configuration](docs/config.md): `config.yaml` and the `/config` page
+- [Updates](docs/updates.md): GitHub check, Docker-socket self-update, Update button
 - [Conversations](docs/conversations.md): Conversation persistence and sync
 - [Custom Tools](docs/custom-tools.md): Tool support for API clients
 - [Home Assistant Guide](docs/howto-home-assistant.md): Use Lumo as your Voice Assistant

@@ -19,7 +19,12 @@ export { AuthManager } from './manager.js';
 export type { AuthManagerOptions } from './manager.js';
 
 // Re-export token refresh utilities
-export { canRefreshWithToken, refreshWithRefreshToken } from './token-refresh.js';
+export {
+    canRefreshWithToken,
+    isPermanentRefreshFailure,
+    refreshWithRefreshToken,
+    SESSION_EXPIRED_NOTICE,
+} from './token-refresh.js';
 
 // Re-export logout utilities
 export { deleteTokenCache, logout, revokeSession } from './logout.js';

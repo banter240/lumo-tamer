@@ -7,6 +7,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import express from 'express';
 import type { Server } from 'http';
 import { createAuthRouter } from '../../src/api/routes/auth.js';
+import { SESSION_EXPIRED_NOTICE } from '../../src/auth/token-refresh.js';
 import { RequestQueue } from '../../src/api/queue.js';
 import { setupAuthMiddleware, setupReadyMiddleware } from '../../src/api/middleware.js';
 import { listen, closeServer } from '../helpers/listen.js';
@@ -35,14 +36,46 @@ describe('auth page', () => {
     expect(html).toContain('Proton email');
     expect(html).toContain('/auth/login');
     expect(html).toContain('If login fails');
-    expect(html).toContain('Docker, no monitor');
+    expect(html).toContain('Docker / Portainer');
     expect(html).toContain('--profile browser');
+    expect(html).toContain('auth browser');
+    expect(html).toContain('http://browser:9222');
+    expect(html).toContain('launch: false');
+    expect(html).toContain('rm -f browser');
+    expect(html).toContain("docker rmi $(docker images -q --filter reference='*lumo-tamer*browser*')");
+    expect(html).toContain('browser-data');
+    expect(html).toContain('lumo-tamer-browser');
+    expect(html).toContain('port 3003');
+    expect(html).not.toContain('playwright install');
     expect(html).toContain('autocomplete="one-time-code"');
     expect(html).toContain('id="one-time-code"');
     expect(html).toContain('lumo-tamer-theme');
     expect(html).toContain('themeToggle');
     expect(html).toContain('href="/config"');
+    expect(html).toContain('id="updateChip"');
+    expect(html).toContain('>Updates</button>');
+    expect(html).toContain('/v1/update?refresh=1');
     expect(html).toContain('github.com/banter240/lumo-tamer');
+  });
+
+  it('shows a re-login notice instead of the signed-in card when the session expired', async () => {
+    const expired = express();
+    expired.use(express.json());
+    expired.use(createAuthRouter({ queue: new RequestQueue(1) }, {
+      getSessionNotice: () => SESSION_EXPIRED_NOTICE,
+    }));
+    const { server, baseUrl } = await listen(expired);
+    try {
+      const res = await fetch(`${baseUrl}/auth`);
+      const html = await res.text();
+      expect(html).toContain(SESSION_EXPIRED_NOTICE);
+      expect(html).toContain('Log in again to restore Lumo');
+      expect(html).toContain('Proton email');
+      expect(html).not.toContain('Signed in');
+      expect(html).not.toContain('Lumo API Ready');
+    } finally {
+      await closeServer(server);
+    }
   });
 
   it('accepts logout without an API key', async () => {

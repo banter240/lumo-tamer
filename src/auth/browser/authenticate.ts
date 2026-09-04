@@ -20,6 +20,9 @@ import { logger } from '../../app/logger.js';
 import { decryptPersistedSession } from '../session-keys.js';
 import { writeVault, configuredVault } from '../vault/index.js';
 import { resolveDataPath } from '../../app/paths.js';
+import { isContainerEnv } from '../../app/env.js';
+import { AUTH } from '../../app/const.js';
+import { resolveBrowserAuthMode, DESKTOP_CDP_DEFAULT } from '../sidecar.js';
 
 export interface ExtractionOptions {
     /** CDP endpoint to connect to an already-running browser (when launch is false) */
@@ -172,7 +175,7 @@ async function fetchClientKey(
             if (currentUrl.includes('lumo.proton.me')) {
                 logger.debug('Trying account.proton.me API');
                 await page.goto(PROTON_URLS.ACCOUNT_BASE, { waitUntil: 'domcontentloaded' });
-                await page.waitForTimeout(500);
+                await page.waitForTimeout(AUTH.BROWSER_NAV_PAUSE_MS);
 
                 const retryResult = await page.evaluate(async ({ uid, accessToken, appVersion }) => {
                     try {
@@ -233,7 +236,7 @@ async function fetchUserInfo(
         const currentUrl = page.url();
         if (!currentUrl.includes('account.proton.me')) {
             await page.goto(PROTON_URLS.ACCOUNT_BASE, { waitUntil: 'domcontentloaded' });
-            await page.waitForTimeout(500);
+            await page.waitForTimeout(AUTH.BROWSER_NAV_PAUSE_MS);
         }
 
         const result = await page.evaluate(async ({ uid, accessToken, appVersion }) => {
@@ -293,7 +296,7 @@ async function fetchMasterKeys(
         const currentUrl = page.url();
         if (!currentUrl.includes('lumo.proton.me')) {
             await page.goto(PROTON_URLS.LUMO_BASE, { waitUntil: 'domcontentloaded' });
-            await page.waitForTimeout(500);
+            await page.waitForTimeout(AUTH.BROWSER_NAV_PAUSE_MS);
         }
 
         const result = await page.evaluate(async ({ uid, accessToken, appVersion }) => {
@@ -378,7 +381,7 @@ async function waitForLumoLogin(page: Page, context: BrowserContext, loginTimeou
             logger.info({ currentUrl: page.url() }, 'Login detected');
             return;
         }
-        await page.waitForTimeout(400);
+        await page.waitForTimeout(AUTH.BROWSER_LOGIN_POLL_MS);
     }
     throw new Error('Login timeout. Please log in and try again.');
 }
@@ -495,14 +498,14 @@ export async function extractBrowserTokens(options: ExtractionOptions): Promise<
         targetUrl,
         fetchPersistenceKeys,
         appVersion,
-        loginTimeout = 180000,
+        loginTimeout = AUTH.BROWSER_LOGIN_TIMEOUT_MS,
     } = options;
 
     logger.info({ launch }, '=== Browser Token Extraction ===');
 
     const session = launch
         ? await launchAndGetPage(userDataDir ?? resolveDataPath('sessions/browser-profile'), targetUrl, loginTimeout)
-        : await connectAndGetPage(cdpEndpoint ?? 'http://localhost:9222', targetUrl, loginTimeout);
+        : await connectAndGetPage(cdpEndpoint ?? DESKTOP_CDP_DEFAULT, targetUrl, loginTimeout);
     const { context, page } = session;
 
     try {
@@ -768,7 +771,7 @@ export async function extractBrowserTokens(options: ExtractionOptions): Promise<
             keyPassword,
             extractedAt,
             // Set expiresAt for unified validity checking (browser tokens valid ~24h)
-            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+            expiresAt: new Date(Date.now() + AUTH.BROWSER_SESSION_TTL_SEC * 1000).toISOString(),
             userKeys,
             masterKeys,
         };
@@ -797,8 +800,12 @@ export async function extractBrowserTokens(options: ExtractionOptions): Promise<
  * Prompt user for CDP endpoint
  */
 async function promptForCdpEndpoint(defaultEndpoint?: string): Promise<string> {
+    const defaultValue = defaultEndpoint || DESKTOP_CDP_DEFAULT;
+    if (!process.stdin.isTTY) {
+        logger.info({ cdpEndpoint: defaultValue }, 'No TTY; using CDP endpoint default');
+        return defaultValue;
+    }
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    const defaultValue = defaultEndpoint || 'http://localhost:9222';
 
     return new Promise(resolve => {
         rl.question(`CDP endpoint [${defaultValue}]: `, answer => {
@@ -817,13 +824,19 @@ async function promptForCdpEndpoint(defaultEndpoint?: string): Promise<string> {
  * @returns Extraction result
  */
 export async function runBrowserAuthentication(): Promise<ExtractionResult> {
-    const launch = authConfig.browser?.launch ?? true;
+    const mode = resolveBrowserAuthMode(
+        {
+            launch: authConfig.browser?.launch ?? true,
+            cdpEndpoint: authConfig.browser?.cdpEndpoint ?? DESKTOP_CDP_DEFAULT,
+        },
+        isContainerEnv(),
+    );
     const syncEnabled = getConversationsConfig().enableSync;
 
     const result = await extractBrowserTokens({
-        launch,
+        launch: mode.launch,
         userDataDir: resolveDataPath(authConfig.browser?.userDataDir ?? 'sessions/browser-profile'),
-        cdpEndpoint: launch ? undefined : await promptForCdpEndpoint(authConfig.browser?.cdpEndpoint),
+        cdpEndpoint: mode.launch ? undefined : await promptForCdpEndpoint(mode.cdpEndpoint),
         targetUrl: PROTON_URLS.LUMO_BASE,
         fetchPersistenceKeys: syncEnabled,
         appVersion: APP_VERSION_HEADER,

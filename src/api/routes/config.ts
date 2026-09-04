@@ -3,13 +3,13 @@
  *
  * GET  /config      - Form (no API key; does not embed secrets)
  * GET  /v1/config   - Field tree; server.apiKey is never returned
- * PUT  /v1/config   - Apply path edits, then restart so values load
+ * PUT  /v1/config   - Apply path edits and hot-reload in-memory config
  */
 
 import { Router, Request, Response } from 'express';
 import { ZodError } from 'zod';
 import { loadDefaultsYaml, loadConfigYaml, updateConfigYaml, checkConfigFile } from '../../app/config-file.js';
-import { parseServerUserConfig } from '../../app/config.js';
+import { getConfigMode, parseServerUserConfig, reloadConfig } from '../../app/config.js';
 import {
   applyConfigEdits,
   applyEditsToDocument,
@@ -21,12 +21,14 @@ import {
   type ConfigEdits,
 } from '../../app/config-editor.js';
 import { logger } from '../../app/logger.js';
+import { resetUpdateCache, startUpdateChecker } from '../../app/updates.js';
 import { htmlPage } from '../web-ui.js';
 import { VERSION } from '../../app/version.js';
 import { clientIp, createAttemptGate } from '../attempt-limit.js';
+import { AUTH } from '../../app/const.js';
 import type { Application } from '../../app/index.js';
 
-const allowSave = createAttemptGate(20);
+const allowSave = createAttemptGate(AUTH.CONFIG_SAVE_MAX_ATTEMPTS);
 
 export interface ConfigRouterHooks {
   onSaved?: () => void;
@@ -65,23 +67,7 @@ function renderConfigPage(isAuthenticated: boolean): string {
     }
     .toolbar-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end; }
     .toolbar .hint { margin: 0; }
-    #toast-container {
-      position: fixed; top: 1rem; right: 1rem; z-index: 1000;
-      display: flex; flex-direction: column; gap: 0.5rem;
-    }
-    .toast {
-      padding: 0.75rem 1rem; background: var(--card); border: 1px solid var(--line);
-      border-left: 4px solid var(--purple); border-radius: 6px;
-      box-shadow: var(--shadow); font-size: 0.85rem; color: var(--text);
-      animation: slideIn 0.3s ease; min-width: 200px; max-width: 300px;
-    }
-    .toast.ok { border-left-color: var(--ok); }
-    .toast.err { border-left-color: var(--err); }
-    .toast.muted { border-left-color: var(--muted); }
-    @keyframes slideIn {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
-    }
+
     .row.bool input[type=checkbox] {
       appearance: none; width: 1.2rem; height: 1.2rem; margin: 0; cursor: pointer;
       border: 1.5px solid var(--line); border-radius: 5px; background: var(--input);
@@ -237,7 +223,6 @@ function renderConfigPage(isAuthenticated: boolean): string {
       }, 5000);
     })();
   </script>
-  <div id="toast-container"></div>
   <div class="layout">
     <nav class="side" id="nav" aria-label="Setting categories"></nav>
     <div>
@@ -669,8 +654,8 @@ function renderConfigPage(isAuthenticated: boolean): string {
       render();
     }
 
-    async function waitUntilUp() {
-      for (let i = 0; i < 60; i++) {
+    async function waitUntilUp(tries = 60) {
+      for (let i = 0; i < tries; i++) {
         await new Promise((r) => setTimeout(r, 500));
         try {
           const ping = await fetch('/health', { cache: 'no-store' });
@@ -696,8 +681,9 @@ function renderConfigPage(isAuthenticated: boolean): string {
         dirty.clear();
         resets.clear();
         updateButtons();
-        showToast('Configuration saved.', 'ok');
+        showToast('Configuration saved and reloaded.', 'ok');
         await load();
+        window.dispatchEvent(new Event('lumo-tamer-config-saved'));
       } catch (err) {
         showToast(err.message || 'Save failed', 'err');
         saveRestartBtn.disabled = false;
@@ -817,6 +803,13 @@ export function createConfigRouter(app: Application, hooks: ConfigRouterHooks = 
       updateConfigYaml((doc) => {
         applyEditsToDocument(doc, defaults, edits);
       });
+      try {
+        reloadConfig();
+        resetUpdateCache();
+        if (getConfigMode() === 'server') startUpdateChecker();
+      } catch (error) {
+        logger.warn({ error }, 'Saved YAML but could not hot-reload in-memory config');
+      }
       logger.info({ paths: changedPaths }, 'Config updated via /config');
 
       res.json({

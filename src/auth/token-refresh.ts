@@ -8,6 +8,7 @@
  */
 
 import { APP_VERSION_HEADER } from '@lumo/config.js';
+import { AUTH } from '../app/const.js';
 import { PROTON_URLS } from '../app/urls.js';
 import { logger } from '../app/logger.js';
 import type { StoredTokens } from './types.js';
@@ -63,7 +64,7 @@ export async function refreshWithRefreshToken(tokens: StoredTokens): Promise<Par
 
     const data = await response.json() as RefreshResponse;
 
-    const expiresIn = data.ExpiresIn || 12 * 60 * 60; // Default 12 hours
+    const expiresIn = data.ExpiresIn || AUTH.DEFAULT_ACCESS_TOKEN_TTL_SEC;
     const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
 
     logger.info(
@@ -84,4 +85,24 @@ export async function refreshWithRefreshToken(tokens: StoredTokens): Promise<Par
  */
 export function canRefreshWithToken(tokens: StoredTokens): boolean {
     return !!tokens.refreshToken;
+}
+
+/** Shown on /auth after the vault is dropped because refresh can no longer work. */
+export const SESSION_EXPIRED_NOTICE =
+    'Proton session expired. Tokens could not be refreshed. Log in again.';
+
+const PERMANENT_REFRESH_STATUS = new Set([400, 401, 403, 422]);
+
+/**
+ * Refresh token is gone or Proton rejected it. Retrying will not help; drop the session.
+ * Network / 5xx stay transient.
+ */
+export function isPermanentRefreshFailure(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/No refresh token available|No access token in refresh response/i.test(message)) {
+        return true;
+    }
+    const statusMatch = message.match(/Token refresh failed:\s*(\d{3})/i);
+    if (!statusMatch) return false;
+    return PERMANENT_REFRESH_STATUS.has(Number(statusMatch[1]));
 }

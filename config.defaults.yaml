@@ -37,7 +37,8 @@ auth:
     userDataDir: "sessions/browser-profile"
     # Chrome DevTools Protocol endpoint when launch: false (Docker / already-running Chrome)
     cdpEndpoint: "http://localhost:9222"
-    # use this if you're running both app and browser docker containers:
+    # Docker/Portainer sidecar (tamer has no Chrome). Also set launch: false.
+    # After `tamer auth browser` this is written for you as http://browser:9222
     # cdpEndpoint: "http://browser:9222"
 
   # Login-specific config (only used when method: login)
@@ -102,6 +103,18 @@ commands:
   # Useful for voice assistants or clients that have /commands themselves.
   # Example: "tamer help" instead of "/help"
   wakeword: "tamer"
+
+# Self-update (GitHub check + Docker socket on this container; no extra updater)
+updates:
+  enabled: true
+  # stable = GitHub latest (main) + GHCR :latest
+  # dev = prereleases + GHCR :dev
+  channel: "stable"
+  repository: "banter240/lumo-tamer"
+  checkIntervalHours: 6
+  autoApply: false
+  # Host docker.sock, bind-mounted into this container (see docker-compose.yml)
+  dockerSocket: "/var/run/docker.sock"
 
 # Server Configuration
 server:
@@ -177,12 +190,11 @@ server:
 
   # Prompt token estimation mode for OpenCode compaction.
   # Proton doesn't report input tokens, so we estimate them to trigger compaction correctly.
-  #   "auto" - Estimate from UTF-8 byte length (recommended, handles emoji correctly)
-  #   "off"  - Legacy behavior: prompt_tokens = 0 (compaction will not trigger)
-  #   number - Manual override: chars-per-token divisor (e.g., 4 for ASCII)
+  #   "auto" - UTF-8 bytes / (4/1.45). Factor 1.0 = that baseline.
+  #   "off"  - prompt_tokens = 0 (compaction will not trigger)
+  #   number - raw chars-per-token divisor (no 1.45 baked in)
   promptTokenEstimation: "auto"
-  # Multiplier for estimated prompt tokens. 1.0 = default, 0.9 = fewer, 1.1 = more.
-  # Use to fine-tune compaction triggers if estimates are too high or too low.
+  # Fine-tune relative to auto (1.45). 1.0 = auto, 0.9 = 90% of auto, 1.1 = 110%.
   promptTokenEstimationFactor: 1.0
 
 

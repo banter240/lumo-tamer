@@ -5,6 +5,7 @@
  * Uses tokens extracted from browser session via Playwright.
  */
 
+import { AUTH } from '../../app/const.js';
 import { logger } from '../../app/logger.js';
 import { APP_VERSION_HEADER } from '@lumo/config.js';
 import { PROTON_URLS } from '../../app/urls.js';
@@ -14,6 +15,17 @@ import type { StoredTokens } from '../types.js';
 interface RefreshResponse {
     UID: string;
     ExpiresIn?: number;
+    AccessToken?: string;
+    RefreshToken?: string;
+}
+
+function readSetCookieHeaders(response: Response): string[] {
+    if (typeof response.headers.getSetCookie === 'function') {
+        const list = response.headers.getSetCookie();
+        if (list.length > 0) return list;
+    }
+    const single = response.headers.get('set-cookie');
+    return single ? [single] : [];
 }
 
 export class BrowserAuthProvider extends AuthProvider {
@@ -70,8 +82,8 @@ export class BrowserAuthProvider extends AuthProvider {
             throw new Error(`Token refresh failed: ${response.status}`);
         }
 
-        // Parse tokens from Set-Cookie headers
-        const setCookieHeaders = response.headers.getSetCookie?.() || [];
+        // Parse tokens from Set-Cookie headers (Node: getSetCookie; some runtimes only expose one header)
+        const setCookieHeaders = readSetCookieHeaders(response);
         logger.debug({ setCookieHeaders }, 'Refresh response cookies');
 
         let newAccessToken: string | undefined;
@@ -96,18 +108,22 @@ export class BrowserAuthProvider extends AuthProvider {
             }
         }
 
-        // Also check JSON body for ExpiresIn
         const data = await response.json() as RefreshResponse;
+        if (!newAccessToken && data.AccessToken) {
+            newAccessToken = data.AccessToken;
+            newRefreshToken = data.RefreshToken || newRefreshToken;
+            logger.info('Browser refresh used JSON body (no AUTH cookie on the response)');
+        }
 
         if (!newAccessToken) {
             logger.error({
                 data,
                 setCookieCount: setCookieHeaders.length,
-            }, 'No access token in refresh response cookies');
+            }, 'No access token in refresh response cookies or JSON');
             throw new Error('No access token in refresh response');
         }
 
-        const expiresIn = data.ExpiresIn || 12 * 60 * 60; // Default 12 hours
+        const expiresIn = data.ExpiresIn || AUTH.DEFAULT_ACCESS_TOKEN_TTL_SEC;
 
         // Update tokens
         this.tokens = {

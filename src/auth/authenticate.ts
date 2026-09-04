@@ -25,6 +25,7 @@ import { runLoginAuthentication } from './login/authenticate.js';
 import { AuthProvider } from './providers/index.js';
 import { printStatus, printSummary, runStatus } from './status.js';
 import { updateAuthConfig } from './update-config.js';
+import { sidecarTeardownHint } from './sidecar.js';
 import type { AuthMethod } from './types.js';
 import { print } from '../app/terminal.js';
 
@@ -134,9 +135,10 @@ export async function runAuthCommand(argv: string[]): Promise<void> {
     logger.flush();
     await new Promise(resolve => setTimeout(resolve, 100));
 
+    const usedCdp = Boolean(cdpEndpoint);
     updateAuthConfig({
       method: persistedMethod,
-      cdpEndpoint,
+      ...(usedCdp ? { cdpEndpoint, launch: false } : {}),
     });
 
     // Show status after extraction - reload from vault
@@ -146,6 +148,10 @@ export async function runAuthCommand(argv: string[]): Promise<void> {
     printSummary(status, provider);
 
     print('\nYou can now run: tamer or tamer server');
+    if (usedCdp) {
+      print('');
+      print(sidecarTeardownHint());
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.error({ err: error }, `Authentication failed: ${message}`);

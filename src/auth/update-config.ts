@@ -14,6 +14,7 @@ import { updateConfigYaml } from '../app/config-file.js';
 const authConfigUpdatesSchema = z.object({
   method: authMethodSchema.optional(),
   cdpEndpoint: z.string().optional(),
+  launch: z.boolean().optional(),
 });
 
 export type AuthConfigUpdates = z.infer<typeof authConfigUpdatesSchema>;
@@ -27,7 +28,7 @@ export type AuthConfigUpdates = z.infer<typeof authConfigUpdatesSchema>;
 export function updateAuthConfig(updates: AuthConfigUpdates): void {
   const validated = authConfigUpdatesSchema.parse(updates);
 
-  if (!validated.method && !validated.cdpEndpoint) {
+  if (!validated.method && !validated.cdpEndpoint && validated.launch === undefined) {
     return;
   }
 
@@ -46,13 +47,18 @@ export function updateAuthConfig(updates: AuthConfigUpdates): void {
     if (validated.method) {
       doc.setIn(['auth', 'method'], validated.method);
     }
-    if (validated.cdpEndpoint) {
-      // Ensure auth.browser section is a map
+    if (validated.launch !== undefined || validated.cdpEndpoint) {
+      // Ensure auth.browser section is a map (not a scalar / missing)
       const browserNode = doc.getIn(['auth', 'browser'], true);
       if (!browserNode || !isMap(browserNode)) {
         doc.setIn(['auth', 'browser'], doc.createNode({}));
       }
-      doc.setIn(['auth', 'browser', 'cdpEndpoint'], validated.cdpEndpoint);
+      if (validated.launch !== undefined) {
+        doc.setIn(['auth', 'browser', 'launch'], validated.launch);
+      }
+      if (validated.cdpEndpoint) {
+        doc.setIn(['auth', 'browser', 'cdpEndpoint'], validated.cdpEndpoint);
+      }
     }
   });
 

@@ -116,6 +116,9 @@ export async function executeCommand(
       case 'refreshtokens':
         return await handleRefreshTokensCommand(context);
 
+      case 'update':
+        return await handleUpdateCommand(params);
+
       case 'ole':
         return 'ole!';
 
@@ -147,6 +150,7 @@ function getHelpText(): string {
   /save [title]      - Save stateless request to conversation (optionally set title)
   /load <id>         - Load a conversation from Proton by ID
   /refreshtokens     - Manually refresh auth tokens
+  /update [apply]    - Check GitHub for a new image; apply recreates this container
   /logout            - Revoke session and delete tokens
   /private           - Keep this conversation local (do not sync)
   /quit              - Exit CLI (CLI mode only)${wakewordHint}`;
@@ -298,7 +302,44 @@ async function handleRefreshTokensCommand(context?: CommandContext): Promise<str
     return 'Tokens refreshed successfully.';
   } catch (error) {
     logger.error({ error }, 'Failed to execute /refreshtokens command');
-    return `Token refresh failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    return `Token refresh failed: ${error instanceof Error ? error.message : 'Unknown error'}. Open /auth and log in again.`;
+  }
+}
+
+/**
+ * Handle /update [apply] — GitHub check, optional Docker self-update
+ */
+async function handleUpdateCommand(params: string): Promise<string> {
+  const { checkForUpdate, applyUpdate } = await import('./updates.js');
+  const apply = /^\s*apply\b/i.test(params);
+  try {
+    if (apply) {
+      const result = await applyUpdate();
+      return result.message;
+    }
+    const status = await checkForUpdate();
+    if (status.error) return `Update check failed: ${status.error}`;
+    if (!status.available) {
+      return `Up to date (${status.current}) on ${status.channel} / ${status.repository}.`;
+    }
+    const lines = [
+      status.action === 'downgrade'
+        ? `Downgrade on ${status.channel}/main: ${status.current} → ${status.latest}. Config and the vault may not load.`
+        : status.action === 'switch'
+          ? `Switch to ${status.channel} ${status.latest} (image :${status.channelTag}).`
+          : `Update available: ${status.current} → ${status.latest} (${status.channel}).`,
+      status.latestUrl ? status.latestUrl : '',
+      status.applyHint || '',
+    ].filter(Boolean);
+    if (status.canApply) {
+      lines.push('Apply with /update apply (pulls the GHCR tag and recreates this container via docker.sock).');
+    } else if (status.applyHint) {
+      lines.push(status.applyHint);
+    }
+    return lines.join('\n');
+  } catch (error) {
+    logger.error({ error }, 'Failed to execute /update command');
+    return `Update failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
   }
 }
 

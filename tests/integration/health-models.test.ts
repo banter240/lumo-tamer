@@ -22,8 +22,10 @@ describe('GET /health', () => {
 
     const body = await res.json();
     expect(body.status).toBe('ok');
+    expect(body.version).toEqual(expect.any(String));
     expect(body.queue).toEqual({ size: 0, pending: 0 });
     expect(body.auth).toEqual({ available: false });
+    expect(body.update).toMatchObject({ available: expect.any(Boolean), current: expect.any(String) });
   });
 });
 

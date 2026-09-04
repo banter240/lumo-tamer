@@ -96,6 +96,7 @@ ENTRYPOINT ["sh", "-c", "\
   case \"$1\" in \
     auth)   shift; exec tamer auth \"$@\" ;; \
     server) shift; exec tamer server \"$@\" ;; \
+    update) shift; exec tamer update \"$@\" ;; \
     cli)    shift; exec tamer \"$@\" ;; \
     '')     exec tamer server ;; \
     *)      exec \"$@\" ;; \

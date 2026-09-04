@@ -3,6 +3,8 @@
  * Prefix/suffix rules fill in CLI variants and executor rows.
  */
 
+import { APP, APP_GITHUB_URL, AUTH, CDP, DOCKER_UPDATE, GITHUB, PORTS, TOKEN_ESTIMATE, UPDATES } from './const.js';
+
 export interface ConfigExample {
   label: string;
   value: string;
@@ -35,6 +37,7 @@ export const CONFIG_CATEGORIES: ConfigCategory[] = [
   { id: 'logging', title: 'Logging', blurb: 'How noisy logs are and whether chat text is written to disk.' },
   { id: 'auth', title: 'Sign-in', blurb: 'How this server fetches Proton tokens. Prefer login via /auth on Docker.' },
   { id: 'commands', title: 'Commands', blurb: 'Slash commands in chat, plus an optional spoken wakeword.' },
+  { id: 'updates', title: 'Updates', blurb: 'GitHub channel, periodic check, and Docker self-update via the engine socket.' },
   { id: 'prompts', title: 'Advanced', blurb: 'Prompt text Lumo actually sees. Tool-call protocol and fallback voice copy.' },
   { id: 'cli', title: 'CLI', blurb: 'Desktop tamer CLI only. Local bash/read/edit blocks on this machine.' },
   { id: 'expert', title: 'Expert', blurb: 'Vault paths, mock mode, Handlebars glue, metrics. Leave these unless you know why.' },
@@ -59,7 +62,7 @@ const COPY: Record<string, FieldCopy> = {
   'auth.method': {
     label: 'Sign-in method',
     hint: 'How this server fetches Proton tokens. On Docker/Portainer use login, then open /auth.',
-    more: 'login: email and password on /auth (SRP). Chat works; sync is on only if Proton granted Lumo scope.\nbrowser (default): a real Chrome window (desktop) or CDP. Needed when Proton returns abuse/CAPTCHA on password login.\nrclone: paste an rclone Proton config. Last resort; usually no Lumo scope, so no sync.',
+    more: `login: email and password on /auth (SRP). Chat works; sync is on only if Proton granted Lumo scope.\nbrowser (default): a real Chrome window (desktop) or CDP. Needed when Proton returns abuse/CAPTCHA on password login. Docker writes launch: false + ${CDP.DOCKER}; remove only the sidecar afterwards.\nrclone: paste an rclone Proton config. Last resort; usually no Lumo scope, so no sync.`,
     choices: AUTH_METHODS,
     noDefault: true,
   },
@@ -69,7 +72,7 @@ const COPY: Record<string, FieldCopy> = {
   },
   'auth.autoRefresh.intervalHours': {
     label: 'Refresh interval (hours)',
-    hint: 'Hours between refreshes (1–24). Default 20.',
+    hint: `Hours between refreshes (${AUTH.REFRESH_INTERVAL_HOURS_MIN}–${AUTH.REFRESH_INTERVAL_HOURS_MAX}). Default ${AUTH.DEFAULT_REFRESH_INTERVAL_HOURS}.`,
   },
   'auth.autoRefresh.onError': {
     label: 'Refresh on 401',
@@ -78,7 +81,7 @@ const COPY: Record<string, FieldCopy> = {
   'auth.browser.launch': {
     label: 'Launch a browser window',
     hint: 'Open a local Chrome/Edge window, wait for login, extract tokens, close it.',
-    more: 'On a desktop with a display, leave this on. Inside Docker there is no window, so set launch off and point cdpEndpoint at a browser sidecar you started yourself.',
+    more: 'On a desktop with a display, leave this on. Inside Docker there is no Chrome in the tamer image — leave this off. After a sidecar login, tamer writes launch: false for you. Do not turn it back on in the container.',
   },
   'auth.browser.userDataDir': {
     label: 'Browser profile directory',
@@ -87,10 +90,10 @@ const COPY: Record<string, FieldCopy> = {
   'auth.browser.cdpEndpoint': {
     label: 'Chrome DevTools endpoint',
     hint: 'Chrome DevTools URL when launch is off (Docker sidecar or already-running Chrome).',
-    more: 'Used only when launch is false. localhost is a Chrome you started on the same machine. The compose sidecar is reachable as http://browser:9222 from the tamer container.',
+    more: `Used only when launch is false. localhost is a Chrome on the same machine (desktop). Inside Docker/Portainer the sidecar is ${CDP.DOCKER} — not localhost. After extraction, stop and remove only ${APP.BROWSER_CONTAINER_NAME}; leave tamer on port ${PORTS.TAMER}.`,
     examples: [
-      { label: 'Example 1 — desktop Chrome', value: 'http://localhost:9222' },
-      { label: 'Example 2 — Docker sidecar', value: 'http://browser:9222' },
+      { label: 'Example 1 — desktop Chrome', value: CDP.DESKTOP },
+      { label: 'Example 2 — Docker sidecar', value: CDP.DOCKER },
     ],
   },
   'auth.vault.path': {
@@ -183,12 +186,52 @@ const COPY: Record<string, FieldCopy> = {
   'conversations.projectName': {
     label: 'Proton project name',
     hint: 'Proton project/space name for synced chats.',
-    examples: sample('lumo-tamer'),
+    examples: sample(APP.NAME),
   },
   'commands.enabled': {
     label: 'Slash commands',
     hint: 'Allow /save, /private, /logout and the wakeword in chats.',
     more: 'When off, /save /help /logout /private are sent to Lumo as normal text. Wakeword is ignored too.',
+  },
+  'updates.enabled': {
+    label: 'Check for updates',
+    hint: 'Look up GitHub Releases on a timer and show the Update button.',
+    more: 'Save applies channel/repo/interval immediately (no Restart). Checking is HTTP only. Applying uses the Docker socket on this container. LUMO_TAMER_IMAGE in .env must match the channel after a switch.',
+  },
+  'updates.channel': {
+    label: 'Release channel',
+    hint: `stable (default) = ${GITHUB.STABLE_BRANCH} / GitHub latest + GHCR :${DOCKER_UPDATE.STABLE_TAG}. dev = prereleases + GHCR :${DOCKER_UPDATE.DEV_TAG}.`,
+    more: `Each channel is its own track. stable/main = latest GitHub release (not -dev). dev = newest prerelease. Switching to an older main build is a downgrade — config and the vault may not load. After a switch, set LUMO_TAMER_IMAGE in .env to :${DOCKER_UPDATE.STABLE_TAG} or :${DOCKER_UPDATE.DEV_TAG} so compose does not roll back.`,
+    choices: ['stable', 'dev'],
+    examples: [
+      { label: 'Example 1 — main / stable', value: 'stable' },
+      { label: 'Example 2 — moving dev', value: 'dev' },
+    ],
+  },
+  'updates.repository': {
+    label: 'GitHub repository',
+    hint: 'owner/repo or a github.com URL. Forks work.',
+    examples: [
+      { label: 'Example 1 — this project', value: APP.GITHUB_REPO },
+      { label: 'Example 2 — URL', value: APP_GITHUB_URL },
+    ],
+  },
+  'updates.checkIntervalHours': {
+    label: 'Check interval (hours)',
+    hint: `Hours between GitHub checks (${UPDATES.CHECK_INTERVAL_HOURS_MIN}–${UPDATES.CHECK_INTERVAL_HOURS_MAX}). Default 6.`,
+  },
+  'updates.autoApply': {
+    label: 'Apply updates automatically',
+    hint: 'When a check finds a newer image, pull GHCR and recreate this container.',
+    more: `Off by default. Needs docker.sock on this container and a matching GHCR tag. A one-shot helper from the new image recreates ${APP.CONTAINER_NAME}, then exits.`,
+  },
+  'updates.dockerSocket': {
+    label: 'Docker socket',
+    hint: 'Unix socket bind-mounted from the host so this process can pull and recreate itself.',
+    more: 'No extra updater container. The socket is root-equivalent on the host — only mount it on a private box. Default /var/run/docker.sock matches docker-compose.yml.',
+    examples: [
+      { label: 'Example', value: '/var/run/docker.sock' },
+    ],
   },
   'commands.wakeword': {
     label: 'Wakeword',
@@ -282,13 +325,13 @@ const COPY: Record<string, FieldCopy> = {
   'server.promptTokenEstimation': {
     label: 'Token estimation (Beta)',
     hint: 'Estimates input tokens for OpenCode compaction. Proton does not report them. Experimental — may be inaccurate.',
-    more: 'auto: estimate from UTF-8 byte length (beta, can be inaccurate). off: prompt_tokens=0, no compaction. The auto mode is experimental and may over- or underestimate.',
+    more: `auto is ${TOKEN_ESTIMATE.NAIVE_BYTES_PER_TOKEN} bytes/token scaled by ${TOKEN_ESTIMATE.AUTO_CALIBRATION} (the Lumo baseline). Factor 1.0 is that value. off: prompt_tokens=0. A number is a raw chars-per-token divisor without ${TOKEN_ESTIMATE.AUTO_CALIBRATION}.`,
     choices: ['auto', 'off'],
   },
   'server.promptTokenEstimationFactor': {
     label: 'Token estimation factor (Beta)',
-    hint: 'Multiplier for estimated prompt tokens. 1.0 = default, 0.9 = fewer, 1.1 = more.',
-    more: 'Fine-tune compaction triggers. Only active when token estimation is auto. If estimates are too high (compaction fires too early), lower to 0.8 or 0.9. If too low (context overflows before compaction), raise to 1.1 or 1.2. Experimental.',
+    hint: `Fine-tune from auto (${TOKEN_ESTIMATE.AUTO_CALIBRATION}). 1.0 = auto, 0.9 = 90% of auto, not 90% of the old /${TOKEN_ESTIMATE.NAIVE_BYTES_PER_TOKEN} guess.`,
+    more: `Only with auto. If you previously set ${TOKEN_ESTIMATE.AUTO_CALIBRATION} here to compensate, set it back to 1.0 — that scale is now inside auto. Then nudge 0.9 / 1.1 from there.`,
   },
   'server.customTools.prefix': {
     label: 'Custom tool prefix',
@@ -442,6 +485,11 @@ export const FIELD_DEPENDENCIES: Record<string, FieldDependency> = {
   'server.metrics.collectDefaultMetrics': { parent: 'server.metrics.enabled', showValues: [true] },
   'server.metrics.prefix': { parent: 'server.metrics.enabled', showValues: [true] },
   'server.promptTokenEstimationFactor': { parent: 'server.promptTokenEstimation', showValues: ['auto'] },
+  'updates.channel': { parent: 'updates.enabled', showValues: [true] },
+  'updates.repository': { parent: 'updates.enabled', showValues: [true] },
+  'updates.checkIntervalHours': { parent: 'updates.enabled', showValues: [true] },
+  'updates.autoApply': { parent: 'updates.enabled', showValues: [true] },
+  'updates.dockerSocket': { parent: 'updates.enabled', showValues: [true] },
 };
 
 const DEFAULT_HINT = 'See config.defaults.yaml and docs/config.md.';
@@ -538,6 +586,7 @@ export function fieldCategory(path: string): string {
   if (path.startsWith('log.') || path.includes('.log.')) return 'logging';
   if (path.startsWith('conversations.')) return 'chats';
   if (path.startsWith('commands.')) return 'commands';
+  if (path.startsWith('updates.')) return 'updates';
   if (
     path === 'server.enableWebSearch'
     || path.startsWith('server.customTools.')

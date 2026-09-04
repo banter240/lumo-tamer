@@ -5,6 +5,7 @@
  * Used by CLI (tamer auth) and the /auth WebUI.
  */
 
+import { AUTH } from '../../app/const.js';
 import { authConfig } from '../../app/config.js';
 import { logger } from '../../app/logger.js';
 import { resolveProjectPath } from '../../app/paths.js';
@@ -16,6 +17,8 @@ import { createProtonApi } from '../api-factory.js';
 import { fetchKeys, type FetchedKeys } from '../fetch-keys.js';
 import { hasProtonSyncKeys, isCaptchaAuthError, isAbuseAuthError } from '../sync-capability.js';
 import { runBrowserAuthentication } from '../browser/authenticate.js';
+import { SIDECAR_NEEDED_ERROR } from '../sidecar.js';
+import { isContainerEnv } from '../../app/env.js';
 import type { StoredTokens } from '../types.js';
 
 export type { ProtonAuthCredentials };
@@ -55,7 +58,7 @@ export async function tokensFromLoginResult(
         accessToken: result.accessToken,
         refreshToken: result.refreshToken,
         keyPassword: result.keyPassword,
-        expiresAt: result.expiresAt || new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
+        expiresAt: result.expiresAt || new Date(Date.now() + AUTH.DEFAULT_ACCESS_TOKEN_TTL_SEC * 1000).toISOString(),
         extractedAt: new Date().toISOString(),
         userKeys: fetched.userKeys,
         masterKeys: fetched.masterKeys,
@@ -106,6 +109,10 @@ export async function runLoginAuthentication(
         return { sync, method: 'login' };
     } catch (error) {
         if (!isAbuseAuthError(error)) throw error;
+        if (isContainerEnv()) {
+            logger.warn('Proton blocked password login (2028). Container has no Chrome; use the sidecar.');
+            throw new Error(SIDECAR_NEEDED_ERROR);
+        }
         logger.warn('Proton blocked password login (2028). Opening a browser window instead.');
         const browser = await runBrowserAuthentication();
         return { sync: hasProtonSyncKeys(browser.tokens), method: 'browser' };

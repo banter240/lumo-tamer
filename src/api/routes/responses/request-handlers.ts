@@ -9,6 +9,7 @@ import {
   ReasoningOutputItem,
 } from '../../types.js';
 import { getServerConfig } from '../../../app/config.js';
+import { estimatePromptTokens } from '../../../app/token-estimate.js';
 import { logger } from '../../../app/logger.js';
 import { ResponseEventEmitter } from './events.js';
 import type { Turn } from '../../../lumo-client/index.js';
@@ -112,12 +113,11 @@ function createCompletedResponse(
   completionTokens?: number,
 ): OpenAIResponse {
   const bytes = request.input ? Buffer.byteLength(JSON.stringify(request.input), 'utf8') : 0;
-  const estimator = getServerConfig().promptTokenEstimation;
-  const factor = getServerConfig().promptTokenEstimationFactor ?? 1.0;
-  const divisor = estimator === 'off'
-    ? Infinity
-    : (typeof estimator === 'number' ? estimator : 4);
-  const estimatedInputTokens = divisor === Infinity ? 0 : Math.ceil((bytes / divisor) * factor);
+  const estimatedInputTokens = estimatePromptTokens(
+    bytes,
+    getServerConfig().promptTokenEstimation,
+    getServerConfig().promptTokenEstimationFactor ?? 1.0,
+  );
   return {
     id: responseId,
     object: 'response',

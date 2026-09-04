@@ -9,6 +9,7 @@
  * - GET  /v1/auth/status  - Get current auth status
  */
 
+import { existsSync } from 'fs';
 import { Router, Request, Response } from 'express';
 import { EndpointDependencies } from '../types.js';
 import { getAutoSyncService } from '../../conversations/index.js';
@@ -18,16 +19,21 @@ import { ProtonAuthError } from '../../auth/login/proton-auth-cli.js';
 import { SRP_ERROR_2FA_REQUIRED } from '../../auth/login/types.js';
 import { updateAuthConfig } from '../../auth/update-config.js';
 import { isCaptchaAuthError } from '../../auth/sync-capability.js';
+import { deleteTokenCache } from '../../auth/logout.js';
+import { DESKTOP_CDP_DEFAULT, DOCKER_CDP_DEFAULT, SIDECAR_NEEDED_ERROR } from '../../auth/sidecar.js';
+import { sendAuthRequired } from '../error-handler.js';
 import { htmlPage } from '../web-ui.js';
 import { VERSION } from '../../app/version.js';
 import { getConversationsConfig } from '../../app/config.js';
 import { clientIp, createAttemptGate } from '../attempt-limit.js';
+import { APP, AUTH, PORTS } from '../../app/const.js';
 
-const allowLoginAttempt = createAttemptGate(5);
+const allowLoginAttempt = createAttemptGate(AUTH.LOGIN_MAX_ATTEMPTS);
 
 export interface AuthRouterHooks {
   onAuthenticated?: () => Promise<void>;
   onLoggedOut?: () => void | Promise<void>;
+  getSessionNotice?: () => string | null;
 }
 
 function loginStatus(syncCapable: boolean, method?: string): {
@@ -101,7 +107,13 @@ function signedInCard(syncCapable: boolean, method?: string): string {
   </div>`;
 }
 
-function renderAuthPage(state: { loggedIn: boolean; sync?: boolean; method?: string }): string {
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (ch) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch] ?? ch
+  ));
+}
+
+function renderAuthPage(state: { loggedIn: boolean; sync?: boolean; method?: string; sessionNotice?: string }): string {
   const extraCss = `
     .fail { margin: 1.15rem 0 0; border-top: 1px solid var(--line); padding-top: 0.95rem; }
     .fail > summary {
@@ -135,7 +147,8 @@ function renderAuthPage(state: { loggedIn: boolean; sync?: boolean; method?: str
   const inner = state.loggedIn
     ? signedInCard(!!state.sync, state.method)
     : `<div class="card">
-  <p class="lede">Log in with your Proton account. No extra browser container.</p>
+  ${state.sessionNotice ? `<p class="err" id="sessionNotice">${escapeHtml(state.sessionNotice)}</p>` : ''}
+  <p class="lede">${state.sessionNotice ? 'Log in again to restore Lumo. No extra browser container unless Proton blocks password login.' : 'Log in with your Proton account. No extra browser container.'}</p>
   <form id="f" method="post" action="/auth/login" autocomplete="on">
     <label for="username">Proton email</label>
     <input id="username" name="username" type="email" autocomplete="username" required>
@@ -152,20 +165,28 @@ function renderAuthPage(state: { loggedIn: boolean; sync?: boolean; method?: str
     <summary>If login fails</summary>
     <div class="fail-body">
       <h3>1. Password or authenticator</h3>
-      <p>Try again. Five attempts per ten minutes.</p>
+      <p>Try again. ${AUTH.LOGIN_MAX_ATTEMPTS} attempts per ${AUTH.ATTEMPT_WINDOW_MS / 60_000} minutes.</p>
       <h3>2. CAPTCHA</h3>
       <p>Open <code>lumo.proton.me</code> in any browser on the <strong>same internet</strong> as this server, then retry this form.</p>
       <h3>3. Desktop — Proton 2028 / “unusual activity”</h3>
       <p>A Chrome window should open. Log in there. This tab updates when tokens are saved. Submitting this form again will not help.</p>
-      <h3>4. Docker, no monitor — 2028</h3>
-      <p>This container cannot open a window. Start the sidecar, log in, extract tokens, then stop it (~1 GB):</p>
+      <h3>4. Docker / Portainer — 2028</h3>
+      <p>This container cannot open a window (and must not try to install Chrome). Start the sidecar, log in, extract tokens, then <strong>remove only the sidecar</strong>. Leave <code>${APP.CONTAINER_NAME}</code> (port ${PORTS.TAMER}) running.</p>
+      <p>From the compose directory (often <code>/opt/${APP.NAME}</code>):</p>
       <ol>
         <li><code>docker compose --profile browser up -d browser</code></li>
-        <li>Open <code>http://&lt;host&gt;:3001</code> and sign in at lumo.proton.me</li>
-        <li><code>docker compose run --rm tamer auth browser</code><br>If asked for CDP: <code>http://browser:9222</code></li>
-        <li><code>docker compose --profile browser stop browser</code></li>
-        <li>Reload this page</li>
+        <li>Open <code>http://&lt;host&gt;:${PORTS.NOVNC}</code> and sign in at lumo.proton.me (CAPTCHA and security keys work)</li>
+        <li><code>docker compose run --rm -it tamer auth browser</code><br>CDP default is <code>${DOCKER_CDP_DEFAULT}</code>. That writes <code>auth.method: browser</code>, <code>auth.browser.launch: false</code>, and the CDP URL — do not set <code>launch: true</code> or <code>${DESKTOP_CDP_DEFAULT}</code> inside Docker.</li>
+        <li>Reload this page (the running server picks up the vault; do not restart tamer)</li>
+        <li>Stop and remove <em>only</em> the sidecar:
+          <br><code>docker compose --profile browser stop browser</code>
+          <br><code>docker compose --profile browser rm -f browser</code></li>
+        <li>Optional — drop the image and Chromium profile so the next start is clean:
+          <br><code>docker rmi \$(docker images -q --filter reference='*lumo-tamer*browser*') 2&gt;/dev/null</code>
+          <br><code>rm -rf ./browser-data</code></li>
+        <li>Check it is gone: <code>docker ps -a --filter name=${APP.BROWSER_CONTAINER_NAME}</code> (empty = gone)</li>
       </ol>
+      <p>Portainer: start/stop/remove the container named <code>${APP.BROWSER_CONTAINER_NAME}</code> only. Console on <code>${APP.CONTAINER_NAME}</code> can run <code>tamer auth browser</code>. Do not stop the stack or the <code>${APP.CONTAINER_NAME}</code> container.</p>
     </div>
   </details>
   </div>
@@ -227,16 +248,39 @@ function renderAuthPage(state: { loggedIn: boolean; sync?: boolean; method?: str
 export function createAuthRouter(deps: EndpointDependencies, hooks: AuthRouterHooks = {}): Router {
   const router = Router();
 
-  router.get('/auth', (_req: Request, res: Response) => {
-    if (!deps.authManager) {
-      res.type('html').send(renderAuthPage({ loggedIn: false }));
+  router.get('/auth', async (_req: Request, res: Response) => {
+    if (deps.authManager && !deps.authManager.getProvider().isValid()) {
+      try {
+        await deps.authManager.refreshNow();
+      } catch (error) {
+        logger.warn({ error }, 'Re-login required: token refresh failed on /auth');
+      }
+    }
+
+    if (!deps.authManager && deps.vaultPath && existsSync(deps.vaultPath)) {
+      try {
+        await hooks.onAuthenticated?.();
+      } catch (error) {
+        logger.warn({ error }, 'Vault present but could not load it for /auth');
+        try {
+          await deleteTokenCache(deps.vaultPath);
+        } catch { /* still show the login form */ }
+      }
+    }
+
+    if (deps.authManager?.getProvider().isValid()) {
+      const provider = deps.authManager.getProvider();
+      res.type('html').send(renderAuthPage({
+        loggedIn: true,
+        sync: provider.supportsFullApi(),
+        method: provider.method,
+      }));
       return;
     }
-    const provider = deps.authManager.getProvider();
+
     res.type('html').send(renderAuthPage({
-      loggedIn: true,
-      sync: provider.supportsFullApi(),
-      method: provider.method,
+      loggedIn: false,
+      sessionNotice: hooks.getSessionNotice?.() ?? undefined,
     }));
   });
 
@@ -306,10 +350,14 @@ export function createAuthRouter(deps: EndpointDependencies, hooks: AuthRouterHo
       }
       const message = error instanceof Error ? error.message : 'Login failed';
       logger.error({ error }, "Can't log in via /auth");
+      const sidecarHint = message === SIDECAR_NEEDED_ERROR
+        || /Could not open a browser|playwright install chromium/i.test(message);
       res.status(401).json({
         error: isCaptchaAuthError(error)
           ? 'Proton asked for a CAPTCHA. Open lumo.proton.me once from the same internet as this server, then try again.'
-          : message.replace(/^Authentication failed: /i, ''),
+          : sidecarHint
+            ? SIDECAR_NEEDED_ERROR
+            : message.replace(/^Authentication failed: /i, ''),
       });
     }
   });
@@ -396,6 +444,10 @@ export function createAuthRouter(deps: EndpointDependencies, hooks: AuthRouterHo
       });
     } catch (error) {
       logger.error({ error }, 'Token refresh API failed');
+      if (!deps.authManager) {
+        sendAuthRequired(res);
+        return;
+      }
       res.status(500).json({
         error: {
           message: error instanceof Error ? error.message : 'Refresh failed',

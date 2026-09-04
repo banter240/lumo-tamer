@@ -3,7 +3,7 @@ services:
   tamer:
     # Pin the tag in .env (see .env.example). Git branch on the host does not matter.
     # First boot: if GHCR is empty, `build: .` is the fallback.
-    image: ${LUMO_TAMER_IMAGE:-ghcr.io/banter240/lumo-tamer:dev}
+    image: ${LUMO_TAMER_IMAGE:-ghcr.io/banter240/lumo-tamer:latest}
     build: .
     pull_policy: missing
     container_name: lumo-tamer
@@ -14,28 +14,18 @@ services:
       # Docker creates a directory if the file doesn't exist, causing errors.
       - ./config.yaml:/app/config.yaml
       - ./sessions:/app/sessions
+      # Self-update (Settings → Updates / tamer update apply). Root-equivalent
+      # on the host — only on a private box. See docs/updates.md.
+      - /var/run/docker.sock:/var/run/docker.sock
     secrets:
       - lumo-vault-key
     environment:
       - NODE_ENV=production
       # Keep config.yaml + sessions on the mounted /app (same as before).
       - LUMO_HOME=/app
-    restart: unless-stopped
-
-  # Optional notifier only. Not part of a normal deploy.
-  #   docker compose --profile watch up -d
-  watchtower:
-    profiles: ["watch"]
-    image: containrrr/watchtower:latest
-    container_name: lumo-tamer-watchtower
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      WATCHTOWER_MONITOR_ONLY: "true"
-      WATCHTOWER_CLEANUP: "true"
-      WATCHTOWER_NOTIFICATIONS: ${WATCHTOWER_NOTIFICATIONS:-}
-      WATCHTOWER_NOTIFICATION_URL: ${WATCHTOWER_NOTIFICATION_URL:-}
-    command: --interval 300 lumo-tamer
+      # So Updates knows which GHCR tag this container is pinned to.
+      - LUMO_TAMER_IMAGE=${LUMO_TAMER_IMAGE:-ghcr.io/banter240/lumo-tamer:latest}
+      - LUMO_CONTAINER_NAME=lumo-tamer
     restart: unless-stopped
 
   # Optional Chromium+noVNC (~1 GB). Not started by a normal `compose up`.
@@ -43,8 +33,14 @@ services:
   # password login (CAPTCHA / 2028) or you need a hardware key:
   #   docker compose --profile browser up -d browser
   #   open http://<host>:3001  -> lumo.proton.me
-  #   docker compose run --rm tamer auth browser
+  #   docker compose run --rm -it tamer auth browser   # CDP http://browser:9222
+  #   # writes auth.browser.launch: false + cdpEndpoint (not localhost)
   #   docker compose --profile browser stop browser
+  #   docker compose --profile browser rm -f browser
+  # Optional image + profile wipe (tamer / port 3003 stays up):
+  #   docker rmi $(docker images -q --filter reference='*lumo-tamer*browser*')
+  #   # rm -rf ./browser-data
+  #   docker ps -a --filter name=lumo-tamer-browser   # empty = gone
   browser:
     profiles: ["browser"]
     # image: lscr.io/linuxserver/chromium:latest
