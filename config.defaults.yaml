@@ -128,6 +128,7 @@ server:
   #   lumo      -> Proton routes automatically
   #   lumo-lite -> Lumo 2.0 Lite (fast, everyday)
   #   lumo-max  -> Lumo 2.0 Max (high-performance)
+  #   lumo-lead -> built-in Lead agent (lumo-max + thinking; strips client tools)
   # Tier used when a request omits the model field (auto = lumo / Proton routes):
   defaultModelTier: "auto"
   # Models advertised on /v1/models and accepted in the "model" field.
@@ -136,9 +137,12 @@ server:
     - "lumo"
     - "lumo-lite"
     - "lumo-max"
+    - "lumo-lead"
 
   # Extra names advertised on /v1/models. Each one maps to a real Lumo tier
   # and optional thinking. Request reasoning_effort still wins when set.
+  # Optional agent: lead | worker (default worker = coding / custom-tools path).
+  # lumo-lead is built-in (allowedModels), not an extraModels alias.
   # extraModels:
   #   - id: lumo-lite-thinking
   #     model: lumo-lite
@@ -146,6 +150,10 @@ server:
   #   - id: lumo-max-reasoning
   #     model: lumo-max
   #     reasoning: high
+  #   - id: my-lead
+  #     model: lumo-max
+  #     reasoning: high
+  #     agent: lead
   extraModels: []
 
   # Thinking / reasoning mode (Lumo 2.0).
@@ -197,6 +205,58 @@ server:
   # Fine-tune relative to auto (1.45). 1.0 = auto, 0.9 = 90% of auto, 1.1 = 110%.
   promptTokenEstimationFactor: 1.0
 
+
+  # Parallel agent instruction profiles. Built-in lumo-lead (and extraModels with
+  # agent: lead) use agentProfiles.lead instead of the coding custom-tools MITM path.
+  agentProfiles:
+    lead:
+      # Coding tools stripped; orchestration tools (task/Task/…) kept.
+      # forOrchestrationTools is a slim protocol — not the coding forTools dump.
+      template: |
+        {{#if clientInstructions}}
+        {{clientInstructions}}
+        {{else}}
+        {{fallback}}
+        {{/if}}
+
+        {{#if tools}}
+        {{forOrchestrationTools}}
+
+        {{tools}}
+        {{/if}}
+
+      replacePatterns: []
+
+      forOrchestrationTools: |
+        === ORCHESTRATION TOOLS ONLY ===
+        You may call ONLY the tools listed below (typically Task / subagent).
+        Coding tools (read/write/edit/bash/…) are NOT available to Lead — delegate those to a worker (lumo-max).
+        Call an orchestration tool by outputting JSON as text in a code block:
+        ```json
+        {"name": "{{prefix}}task", "arguments": {"prompt": "brief for worker"}}
+        ```
+        Copy "name" exactly from the list (keep `{{prefix}}`). One object per call. No preamble — emit the code block directly.
+        === END ===
+
+      fallback: |
+        You are Lumo Lead — a GLM 5.2 chat orchestrator. You are NOT a coding agent.
+
+        Your job: talk to the user, plan, delegate to a worker (lumo-max / agent:worker) via the Task tool when available, verify results, and coach. You never implement, edit files, or run shell yourself.
+
+        Rules:
+        1. Do not write or edit code. Do not run build/test/shell yourself.
+        2. When work is needed, delegate to the worker (Task / subagent) with a short brief: goal, constraints, done-when.
+        3. After the worker returns: summarize for the user. If incomplete, re-delegate with corrections.
+        4. You may emit JSON tool calls ONLY for allowlisted orchestration tools (task/Task). Never for read/write/bash/…
+        5. If a worker only narrates ("Let me read…") without a real tool call: coach the SAME worker once to emit the tool call. Spawn/escalate a NEW subagent only after that repeats.
+        6. Keep replies short. Match the user's language.
+        7. Escalate to the human only for real decisions.
+
+        Delegation brief for worker:
+        - Goal:
+        - Scope / files if known:
+        - Done when:
+        - Do not only announce tools — call them.
 
   instructions:
 
@@ -304,6 +364,14 @@ server:
       You MUST output custom tool calls as JSON text in a ```json code block.
       Do NOT narrate or announce. Just emit the code block directly.
       Re-output the tool call now as fenced JSON:
+
+    # When the model announces a tool action ("Let me read…") but emits no tool-call JSON.
+    # Bounced once per turn (same as forToolBounce); no multi-turn counter.
+    forAnnounceBounce: |
+      ERROR: You announced a tool action but did not emit a tool call.
+      Do NOT only narrate ("Let me read…", "reading all files…").
+      Output the custom tool call NOW as JSON text in a ```json code block.
+      Copy "name" exactly from your tool list (keep the prefix). No preamble — emit the code block directly.
 
 
 

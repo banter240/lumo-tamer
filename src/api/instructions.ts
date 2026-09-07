@@ -4,10 +4,11 @@
  * - Template validation
  * - Replace patterns for cleaning client instructions
  * - Instruction building with tool prefixing
+ * - Lead profile (chat orchestrator; orchestration tools only)
  */
 
 import { logger } from '../app/logger.js';
-import { getServerInstructionsConfig, getCustomToolsConfig } from '../app/config.js';
+import { getServerInstructionsConfig, getCustomToolsConfig, getLeadAgentProfile } from '../app/config.js';
 import { interpolateTemplate } from '../app/template.js';
 import { applyToolPrefix, applyToolNamePrefix } from './tools/prefix.js';
 import type { OpenAITool } from './types.js';
@@ -94,7 +95,7 @@ function validateReplacePatternsOnce(): void {
   }
 }
 
-// ── Instruction building ─────────────────────────────────────────────
+// ── Shared helpers ────────────────────────────────────────────────────
 
 /**
  * Extract tool names from tool definitions (handles both nested and flat formats).
@@ -104,6 +105,66 @@ function extractToolNames(tools?: OpenAITool[]): string[] {
   return tools
     .map(t => t.function?.name || (t as unknown as { name?: string }).name)
     .filter((n): n is string => Boolean(n));
+}
+
+function cleanClientInstructions(
+  clientInstructions: string | undefined,
+  patterns: ReplacePattern[],
+): string | undefined {
+  if (!clientInstructions) return undefined;
+  return applyReplacePatterns(clientInstructions, patterns);
+}
+
+/**
+ * Interpolate a profile template with client instructions / fallback.
+ * Shared by worker and lead so Handlebars logic stays in one place.
+ */
+export function interpolateInstructionProfile(
+  template: string,
+  vars: {
+    clientInstructions?: string;
+    fallback: string;
+    prefix?: string;
+    tools?: string;
+    forTools?: string;
+    forOrchestrationTools?: string;
+  },
+): string {
+  return interpolateTemplate(template, vars);
+}
+
+// ── Instruction building ─────────────────────────────────────────────
+
+export type InstructionProfile = 'lead' | 'worker';
+
+/**
+ * Build lead-agent instructions.
+ * May include allowlisted orchestration tools + slim forOrchestrationTools —
+ * never the coding forTools MITM dump.
+ */
+export function buildLeadInstructions(
+  clientInstructions?: string,
+  tools?: OpenAITool[],
+): string {
+  const profile = getLeadAgentProfile();
+  const toolsConfig = getCustomToolsConfig();
+  const { prefix } = toolsConfig;
+  const cleaned = cleanClientInstructions(clientInstructions, profile.replacePatterns ?? []);
+  const includeTools = toolsConfig.enabled && tools && tools.length > 0;
+  const forOrchestrationTools = includeTools
+    ? interpolateTemplate(profile.forOrchestrationTools, { prefix })
+    : undefined;
+  let toolsJson: string | undefined;
+  if (includeTools && tools) {
+    toolsJson = JSON.stringify(applyToolPrefix(tools, prefix), null, 2);
+  }
+  return interpolateInstructionProfile(profile.template, {
+    clientInstructions: cleaned,
+    fallback: profile.fallback,
+    prefix,
+    tools: toolsJson,
+    forOrchestrationTools,
+  });
 }
 
 /**
@@ -119,8 +180,12 @@ function extractToolNames(tools?: OpenAITool[]): string[] {
 export function buildInstructions(
   tools?: OpenAITool[],
   clientInstructions?: string,
-  options: { compact?: boolean } = {},
+  options: { compact?: boolean; profile?: InstructionProfile } = {},
 ): string {
+  if (options.profile === 'lead') {
+    return buildLeadInstructions(clientInstructions, tools);
+  }
+
   const instructionsConfig = getServerInstructionsConfig();
   const toolsConfig = getCustomToolsConfig();
   const { prefix } = toolsConfig;
@@ -153,13 +218,11 @@ export function buildInstructions(
   }
 
   // Interpolate main template with all variables
-  const result = interpolateTemplate(instructionsConfig.template, {
+  return interpolateInstructionProfile(instructionsConfig.template, {
     prefix,
     tools: toolsJson,
     clientInstructions: cleanedClientInstructions,
     forTools,
     fallback: instructionsConfig.fallback,
   });
-
-  return result;
 }

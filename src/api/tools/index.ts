@@ -47,3 +47,13 @@ export {
   NativeToolCallProcessor,
   type NativeToolCallResult,
 } from './native-tool-call-processor.js';
+
+// Lead orchestration tool allowlist
+export {
+  isOrchestrationToolName,
+  filterToolsForLead,
+  toolFunctionName,
+} from './lead-tools.js';
+
+// Announce-without-tool detection (worker coach / bounce)
+export { isAnnounceWithoutToolCall } from './announce.js';

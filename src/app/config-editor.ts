@@ -35,6 +35,8 @@ const MULTILINE_KEYS = new Set([
   'forTools',
   'forToolsCompact',
   'forToolBounce',
+  'forAnnounceBounce',
+  'forOrchestrationTools',
   'forLocalActions',
   'fallback',
   'forJsonFormat',

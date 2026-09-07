@@ -169,7 +169,8 @@ export async function handleRequest(
   conversationId: ConversationId | undefined,
   streaming: boolean,
   instructions: string | undefined,
-  injectInstructionsInto: 'first' | 'last'
+  injectInstructionsInto: 'first' | 'last',
+  agent: 'lead' | 'worker' = 'worker',
 ): Promise<void> {
   const id = generateResponseId();
   const itemId = generateItemId();
@@ -249,6 +250,7 @@ export async function handleRequest(
           modelTier: tier,
           enableReasoning,
           onReasoning: surfaceThinking ? emitReasoning : undefined,
+          coachAnnounceWithoutTool: agent === 'worker' && ctx.hasCustomTools,
         })
       );
 

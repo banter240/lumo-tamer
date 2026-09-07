@@ -146,6 +146,11 @@ export interface LumoClientOptions {
     enableReasoning?: boolean;
     /** Sink for reasoning/thinking chunks (always drained, even if unused). */
     onReasoning?: (content: string) => void;
+    /**
+     * When true (worker + custom tools), buffer the first completion and bounce
+     * once if the assistant announces a tool action without emitting tool-call JSON.
+     */
+    coachAnnounceWithoutTool?: boolean;
 }
 
 /** Result from a chat request. */

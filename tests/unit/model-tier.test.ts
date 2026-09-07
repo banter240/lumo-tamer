@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeModelId, modelToTier, isModelAllowed, isDefaultTierAllowed, resolveReasoning, isValidReasoningEffort, resolveModel, advertisedModelIds } from '../../src/lumo-client/model-tier.js';
+import { normalizeModelId, modelToTier, isModelAllowed, isDefaultTierAllowed, resolveReasoning, isValidReasoningEffort, resolveModel, advertisedModelIds, BUILTIN_MODEL_PROFILES } from '../../src/lumo-client/model-tier.js';
 
 describe('normalizeModelId', () => {
     it('lowercases, trims, and strips a provider prefix', () => {
@@ -37,10 +37,11 @@ describe('modelToTier', () => {
 });
 
 describe('isModelAllowed', () => {
-    const allowed = ['lumo', 'lumo-lite', 'lumo-max'];
+    const allowed = ['lumo', 'lumo-lite', 'lumo-max', 'lumo-lead'];
     it('accepts allowed models (normalized) and rejects others', () => {
         expect(isModelAllowed('lumo-max', allowed)).toBe(true);
         expect(isModelAllowed(normalizeModelId('proton/lumo'), allowed)).toBe(true);
+        expect(isModelAllowed('lumo-lead', allowed)).toBe(true);
         expect(isModelAllowed('gpt-4', allowed)).toBe(false);
     });
 });
@@ -83,15 +84,16 @@ describe('resolveReasoning', () => {
 });
 
 describe('resolveModel / advertisedModelIds', () => {
-    const allowed = ['lumo', 'lumo-lite', 'lumo-max'];
+    const allowed = ['lumo', 'lumo-lite', 'lumo-max', 'lumo-lead'];
     const extras = [
         { id: 'lumo-lite-thinking', model: 'lumo-lite', reasoning: 'high' as const },
         { id: 'lumo-max-fast', model: 'lumo-max', reasoning: 'none' as const },
+        { id: 'my-lead', model: 'lumo-max', reasoning: 'high' as const, agent: 'lead' as const },
     ];
 
     it('lists extras after built-ins', () => {
         expect(advertisedModelIds(allowed, extras)).toEqual([
-            'lumo', 'lumo-lite', 'lumo-max', 'lumo-lite-thinking', 'lumo-max-fast',
+            'lumo', 'lumo-lite', 'lumo-max', 'lumo-lead', 'lumo-lite-thinking', 'lumo-max-fast', 'my-lead',
         ]);
     });
 
@@ -102,5 +104,45 @@ describe('resolveModel / advertisedModelIds', () => {
 
     it('rejects unknown names', () => {
         expect(resolveModel('gpt-4', allowed, extras, 'auto')).toBeNull();
+    });
+
+    it('resolves built-in lumo-lead to lumo-max + thinking + lead', () => {
+        expect(BUILTIN_MODEL_PROFILES['lumo-lead']).toEqual({
+            tier: 'lumo-max',
+            reasoning: 'high',
+            agent: 'lead',
+        });
+        const resolved = resolveModel('lumo-lead', allowed, extras, 'auto');
+        expect(resolved).toEqual({
+            id: 'lumo-lead',
+            tier: 'lumo-max',
+            reasoning: 'high',
+            agent: 'lead',
+        });
+        // Built-in wins even if a conflicting extraModels entry exists
+        const withConflict = resolveModel(
+            'lumo-lead',
+            allowed,
+            [{ id: 'lumo-lead', model: 'lumo', reasoning: 'none', agent: 'lead' }],
+            'auto',
+        );
+        expect(withConflict).toEqual({
+            id: 'lumo-lead',
+            tier: 'lumo-max',
+            reasoning: 'high',
+            agent: 'lead',
+        });
+    });
+
+    it('carries agent from optional extraModels aliases', () => {
+        const resolved = resolveModel('my-lead', allowed, extras, 'auto');
+        expect(resolved).toEqual({
+            id: 'my-lead',
+            tier: 'lumo-max',
+            reasoning: 'high',
+            agent: 'lead',
+        });
+        const worker = resolveModel('lumo-lite-thinking', allowed, extras, 'auto');
+        expect(worker?.agent).toBeUndefined();
     });
 });

@@ -264,13 +264,13 @@ const COPY: Record<string, FieldCopy> = {
   'server.allowedModels': {
     label: 'Allowed model names',
     hint: 'Built-in names this proxy accepts in the model field. Unknown names return 400.',
-    more: 'Comma-separated, not JSON. These are Proton ids only. Your own aliases belong in Extra model names, not here. Removing lumo-max hides it from /v1/models and rejects it with 400.',
-    examples: sample('lumo, lumo-lite, lumo-max'),
+    more: 'Comma-separated, not JSON. Includes Proton ids plus built-in lumo-lead (lumo-max + thinking, agent lead — strips tools). Your own aliases belong in Extra model names, not here. Removing lumo-max or lumo-lead hides them from /v1/models and rejects them with 400.',
+    examples: sample('lumo, lumo-lite, lumo-max, lumo-lead'),
   },
   'server.extraModels': {
     label: 'Extra model names',
     hint: 'Your own names on /v1/models. Each maps an id to a real Lumo tier and optional thinking.',
-    more: 'JSON array of objects, not YAML and not comma-separated names. Paste over [] — several aliases go in the same array, comma-separated objects. id is what clients send as model. model is the real Proton tier: lumo, lumo-lite, lumo-max, or auto. reasoning is optional (none or high) and applies only when the request omits reasoning_effort; an explicit reasoning_effort still wins. The example below is all four lite/max × none/high combos; delete the rows you do not want. lumo-max and thinking depend on the Proton plan.',
+    more: 'JSON array of objects, not YAML and not comma-separated names. Paste over [] — several aliases go in the same array, comma-separated objects. id is what clients send as model. model is the real Proton tier: lumo, lumo-lite, lumo-max, or auto. reasoning is optional (none or high) and applies only when the request omits reasoning_effort; an explicit reasoning_effort still wins. Optional agent is lead or worker (default worker = coding / custom-tools path). agent: lead uses server.agentProfiles.lead (orchestration tools only). Built-in lumo-lead lives in allowedModels (not here). The example below is all four lite/max × none/high combos; delete the rows you do not want. lumo-max and thinking depend on the Proton plan.',
     kind: 'json',
     examples: [{
       label: 'Example — four aliases in one array (delete what you do not need)',
@@ -389,6 +389,32 @@ const COPY: Record<string, FieldCopy> = {
     label: 'Bounce misrouted native calls',
     hint: 'Sent when Lumo misroutes a custom tool through its native pipeline.',
     more: 'The misrouted JSON is appended at runtime after this text. Keep the "like this:" shape so Lumo retries as a fence, not as another native call.',
+  },
+  'server.instructions.forAnnounceBounce': {
+    label: 'Bounce announce-without-tool',
+    hint: 'Sent once when the worker announces a tool action but emits no tool-call JSON.',
+    more: 'Worker path only (custom tools on). Buffers the first completion, then re-asks for a real fenced tool call. One bounce per turn (same as forToolBounce) — no multi-turn counter.',
+  },
+  'server.agentProfiles.lead.fallback': {
+    label: 'Lead agent fallback',
+    hint: 'Fallback system text when model agent is lead and the client sends no system prompt.',
+    more: 'Used by built-in lumo-lead (and any extraModel with agent: lead). Coding tools are stripped; orchestration tools (task) may remain with forOrchestrationTools. Workers (lumo-max) still get full forTools. Coach same worker once on narration-only results before spawning a new subagent.',
+  },
+  'server.agentProfiles.lead.forOrchestrationTools': {
+    label: 'Lead orchestration tool protocol',
+    hint: 'Slim protocol for allowlisted Task/subagent tools only — not the coding forTools dump.',
+    more: 'Injected only when Lead keeps orchestration tools after the allowlist filter. Instructs GLM to call those tools via fenced JSON. Coding tools never appear here.',
+  },
+  'server.agentProfiles.lead.template': {
+    label: 'Lead agent template (Handlebars)',
+    hint: 'Handlebars glue for the lead profile. Edit fallback instead unless you need custom structure.',
+    more: 'Variables: clientInstructions, fallback. No tools / forTools — lead ignores client tools.',
+  },
+  'server.agentProfiles.lead.replacePatterns': {
+    label: 'Lead client-prompt replacements',
+    hint: 'Regex cleanup of client system prompts for lead models. Empty by default.',
+    more: 'Same shape as server.instructions.replacePatterns. Applied only when agent is lead.',
+    examples: sample(JSON.stringify([], null, 2)),
   },
   'cli.log.target': {
     label: 'CLI log destination',
@@ -580,7 +606,7 @@ export function fieldCategory(path: string): string {
     return 'expert';
   }
   if (path.startsWith('cli.instructions.')) return 'cli';
-  if (path.includes('.instructions.')) return 'prompts';
+  if (path.includes('.instructions.') || path.includes('.agentProfiles.')) return 'prompts';
   if (path.startsWith('cli.')) return 'cli';
   if (path.startsWith('auth.')) return 'auth';
   if (path.startsWith('log.') || path.includes('.log.')) return 'logging';

@@ -61,6 +61,8 @@ describe('walkConfigFields', () => {
     expect(fields.find((f) => f.path === 'server.instructions.template')?.category).toBe('expert');
     expect(fieldCategory('cli.instructions.forLocalActions')).toBe('cli');
     expect(fieldCategory('cli.instructions.template')).toBe('expert');
+    expect(fieldCategory('server.agentProfiles.lead.fallback')).toBe('prompts');
+    expect(fieldCategory('server.agentProfiles.lead.template')).toBe('expert');
   });
 
   it('aliases CLI injectInto copy and keeps a distinct label', () => {

@@ -10,6 +10,7 @@ import {
   conversationIdFromUserField,
   invalidModelOrEffort,
   persistInboundTurns,
+  resolveRequestTier,
   tryPrepareTools,
 } from '../../request-prep.js';
 
@@ -83,12 +84,14 @@ export function createResponsesRouter(deps: EndpointDependencies): Router {
       const turns = await convertOpenAIResponseMessages(request.input, request.instructions);
 
       // ===== Build instructions (injected in LumoClient, not persisted) =====
+      const { agent } = resolveRequestTier(request.model, request.reasoning?.effort);
       const prepared = tryPrepareTools(
         request.tools,
         request.tool_choice,
         request.instructions,
         undefined,
         turns.filter((t) => t.role === 'user').length > 1,
+        agent,
       );
       if (!prepared.ok) {
         return sendInvalidRequest(res, prepared.message, 'tool_choice', 'invalid_tool_choice');
@@ -99,7 +102,7 @@ export function createResponsesRouter(deps: EndpointDependencies): Router {
       persistInboundTurns(deps, conversationId, turns);
 
       // ===== STEP 6: Add to queue and process =====
-      await handleRequest(res, deps, request, turns, conversationId, request.stream ?? false, instructions, injectInto);
+      await handleRequest(res, deps, request, turns, conversationId, request.stream ?? false, instructions, injectInto, agent);
     } catch (error) {
       logger.error('Error processing response:');
       logger.error(error);

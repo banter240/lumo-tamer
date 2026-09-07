@@ -8,9 +8,11 @@ import { getConversationsConfig, getCustomToolsConfig, getReasoningConfig, getSe
 import { deterministicUUID } from '../app/id-generator.js';
 import { getMetrics } from '../app/metrics.js';
 import { advertisedModelIds, isModelAllowed, isValidReasoningEffort, normalizeModelId, resolveModel, resolveReasoning } from '../lumo-client/model-tier.js';
+import type { AgentKind } from '../lumo-client/model-tier.js';
 import type { LumoModelTier } from '../lumo-client/types.js';
 import { buildInstructions } from './instructions.js';
 import { parseToolChoice, toolChoiceInstruction, toolsForChoice } from './tools/tool-choice.js';
+import { filterToolsForLead } from './tools/lead-tools.js';
 import type { ConversationId } from '../conversations/types.js';
 import type { EndpointDependencies, OpenAITool } from './types.js';
 import type { Turn } from '../lumo-client/index.js';
@@ -80,6 +82,7 @@ export function resolveRequestTier(model: unknown, effort: unknown): {
   tier: LumoModelTier;
   enableReasoning: boolean;
   surfaceThinking: boolean;
+  agent: AgentKind;
 } {
   const serverConfig = getServerConfig();
   const resolved = resolveModel(
@@ -100,6 +103,7 @@ export function resolveRequestTier(model: unknown, effort: unknown): {
       resolved?.reasoning,
     ),
     surfaceThinking: reasoningConfig.surfaceThinking,
+    agent: resolved?.agent === 'lead' ? 'lead' : 'worker',
   };
 }
 
@@ -115,7 +119,22 @@ export function prepareToolsAndInstructions(
   clientInstructions?: string,
   extraInstructions?: string,
   compact = false,
+  agent: AgentKind = 'worker',
 ): PreparedTools {
+  // Lead: keep orchestration tools (task/Task/…); strip coding tools.
+  // Slim forOrchestrationTools only — never the coding forTools MITM dump.
+  if (agent === 'lead') {
+    const leadTools = filterToolsForLead(tools);
+    return {
+      tools: leadTools,
+      instructions: appendInstructions(
+        buildInstructions(leadTools, clientInstructions, { profile: 'lead' }),
+        extraInstructions,
+      ),
+      injectInto: resolveInjectInto(leadTools?.length),
+    };
+  }
+
   const choice = parseToolChoice(rawChoice);
   const effective = toolsForChoice(tools, choice);
   return {
@@ -135,11 +154,14 @@ export function tryPrepareTools(
   clientInstructions?: string,
   extraInstructions?: string,
   compact = false,
+  agent: AgentKind = 'worker',
 ): { ok: true; prepared: PreparedTools } | { ok: false; message: string } {
   try {
     return {
       ok: true,
-      prepared: prepareToolsAndInstructions(tools, rawChoice, clientInstructions, extraInstructions, compact),
+      prepared: prepareToolsAndInstructions(
+        tools, rawChoice, clientInstructions, extraInstructions, compact, agent,
+      ),
     };
   } catch (error) {
     return {

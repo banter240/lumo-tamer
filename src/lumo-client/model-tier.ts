@@ -39,17 +39,31 @@ export function modelToTier(normalizedModel: string): LumoModelTier {
     }
 }
 
+export type AgentKind = 'lead' | 'worker';
+
 export interface ExtraModel {
     id: string;
     model: string;
     reasoning?: 'none' | 'high';
+    /** lead = chat orchestrator (no custom-tools MITM). Absent = worker. */
+    agent?: AgentKind;
 }
 
 export interface ResolvedModel {
     id: string;
     tier: LumoModelTier;
     reasoning?: 'none' | 'high';
+    agent?: AgentKind;
 }
+
+/**
+ * Built-in model profiles (not extraModels aliases).
+ * `lumo-lead` is a first-class id like lumo / lumo-lite / lumo-max; under the
+ * hood it runs lumo-max with thinking and the lead agent profile.
+ */
+export const BUILTIN_MODEL_PROFILES: Readonly<Record<string, Omit<ResolvedModel, 'id'>>> = {
+    'lumo-lead': { tier: 'lumo-max', reasoning: 'high', agent: 'lead' },
+};
 
 /** True if the normalized model is in the allowed list (also normalized). */
 export function isModelAllowed(normalizedModel: string, allowedModels: string[]): boolean {
@@ -71,6 +85,8 @@ export function advertisedModelIds(allowedModels: string[], extras: ExtraModel[]
 /**
  * Map a request model id to a Proton tier and optional thinking override.
  * Unknown ids return null. Missing model uses defaultTier.
+ * Built-in profiles (e.g. lumo-lead) win over extraModels when allowed.
+ * extraModels still supports optional custom aliases, including agent: lead.
  */
 export function resolveModel(
     rawModel: unknown,
@@ -85,12 +101,17 @@ export function resolveModel(
         return null;
     }
     const id = normalizeModelId(rawModel);
+    const builtin = BUILTIN_MODEL_PROFILES[id];
+    if (builtin && isModelAllowed(id, allowedModels)) {
+        return { id, ...builtin };
+    }
     const extra = extras.find((item) => normalizeModelId(item.id) === id);
     if (extra) {
         return {
             id: extra.id,
             tier: modelToTier(normalizeModelId(extra.model)),
             reasoning: extra.reasoning,
+            agent: extra.agent,
         };
     }
     if (isModelAllowed(id, allowedModels)) {
@@ -106,8 +127,8 @@ export function isDefaultTierAllowed(defaultModelTier: string, allowedModels: st
 
 /**
  * Resolve the inbound reasoning_effort to a thinking-mode boolean.
- * Explicit effort wins. Else extraModels[].reasoning. Else global default.
- * Built-in lumo-max still thinks when nothing else is set (Proton Max).
+ * Explicit effort wins. Else model/built-in reasoning pin. Else global default.
+ * Built-in lumo-max (and lumo-lead → lumo-max) still thinks when nothing else is set.
  */
 export function resolveReasoning(
     effort: string | null | undefined,

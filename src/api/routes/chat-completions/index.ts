@@ -113,12 +113,14 @@ export function createChatCompletionsRouter(deps: EndpointDependencies): Router 
           'invalid_response_format',
         );
       }
+      const { agent } = resolveRequestTier(request.model, request.reasoning_effort);
       const prepared = tryPrepareTools(
         request.tools,
         request.tool_choice,
         systemContent,
         jsonFormat ? buildJsonFormatInstruction(jsonFormat) : undefined,
         turns.filter((t) => t.role === 'user').length > 1,
+        agent,
       );
       if (!prepared.ok) {
         return sendInvalidRequest(res, prepared.message, 'tool_choice', 'invalid_tool_choice');
@@ -128,7 +130,7 @@ export function createChatCompletionsRouter(deps: EndpointDependencies): Router 
       persistInboundTurns(deps, conversationId, turns);
 
       // Add to queue and process
-      await handleChatRequest(res, deps, request, turns, conversationId, request.stream ?? false, instructions, injectInto, effectiveTools);
+      await handleChatRequest(res, deps, request, turns, conversationId, request.stream ?? false, instructions, injectInto, effectiveTools, agent);
     } catch (error) {
       logger.error('Error processing chat completion:');
       logger.error(error);
@@ -150,6 +152,7 @@ async function handleChatRequest(
   instructions: string | undefined,
   injectInstructionsInto: 'first' | 'last',
   effectiveTools?: OpenAIChatRequest['tools'],
+  agent: 'lead' | 'worker' = 'worker',
 ): Promise<void> {
   const id = generateChatCompletionId();
   const created = Math.floor(Date.now() / 1000);
@@ -212,6 +215,8 @@ async function handleChatRequest(
           onReasoning: surfaceThinking && emitter
             ? (text) => emitter.emitReasoningDelta(text)
             : undefined,
+          // Worker + custom tools: bounce once on announce-without-tool narration.
+          coachAnnounceWithoutTool: agent === 'worker' && ctx.hasCustomTools,
         })
       );
 

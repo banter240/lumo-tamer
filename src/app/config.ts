@@ -98,10 +98,21 @@ const serverInstructionsConfigSchema = z.object({
   forTools: z.string(),
   fallback: z.string(),
   forToolBounce: z.string(),
+  /** Coach when the worker announces a tool action but emits no tool-call JSON. */
+  forAnnounceBounce: z.string(),
   forJsonFormat: z.string(),
   forToolRequired: z.string(),
   forToolNamed: z.string(),
   forToolsCompact: z.string(),
+  replacePatterns: z.array(replacePatternSchema),
+});
+
+/** Lead agent profile: chat orchestrator; orchestration tools only (no coding forTools). */
+const agentProfileSchema = z.object({
+  template: z.string(),
+  fallback: z.string(),
+  /** Slim protocol for allowlisted task/subagent tools only — not the coding forTools dump. */
+  forOrchestrationTools: z.string(),
   replacePatterns: z.array(replacePatternSchema),
 });
 
@@ -181,7 +192,11 @@ const serverMergedConfigSchema = z.object({
     id: z.string().min(1),
     model: z.enum(['lumo', 'lumo-lite', 'lumo-max', 'auto']),
     reasoning: z.enum(['none', 'high']).optional(),
+    agent: z.enum(['lead', 'worker']).optional(),
   })),
+  agentProfiles: z.object({
+    lead: agentProfileSchema,
+  }),
   reasoning: z.object({
     default: z.enum(['none', 'high']),
     surfaceThinking: z.boolean(),
@@ -326,6 +341,10 @@ export function getCustomToolsConfig() {
 export function getServerInstructionsConfig() {
   const cfg = getServerConfig();
   return cfg.instructions;
+}
+
+export function getLeadAgentProfile() {
+  return getServerConfig().agentProfiles.lead;
 }
 
 export function getMetricsConfig() {

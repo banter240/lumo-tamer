@@ -21,7 +21,7 @@ fi
 cat >"$LUMO_HOME/opencode.json" <<'EOF'
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "lumo-tamer/lumo-max",
+  "model": "lumo-tamer/lumo-lead",
   "small_model": "lumo-tamer/lumo-lite",
   "provider": {
     "lumo-tamer": {
@@ -45,6 +45,11 @@ cat >"$LUMO_HOME/opencode.json" <<'EOF'
           "name": "Lumo Lite (local)",
           "limit": { "context": 131072, "output": 13107 },
           "options": { "reasoning_effort": "none" }
+        },
+        "lumo-lead": {
+          "name": "Lumo Lead (local)",
+          "limit": { "context": 131072, "output": 13107 },
+          "options": { "reasoning_effort": "high" }
         }
       }
     }
@@ -78,6 +83,6 @@ if ! curl -sf --max-time 1 http://127.0.0.1:3003/health >/dev/null; then
   fi
 fi
 
-echo "OpenCode → http://127.0.0.1:3003 (local). Proxmox config is unused."
+echo "OpenCode → http://127.0.0.1:3003 (local). primary=lumo-lead, worker=lumo-max. Proxmox unused."
 cd "$ROOT"
 exec opencode "$@"

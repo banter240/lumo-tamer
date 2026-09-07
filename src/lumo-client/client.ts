@@ -34,7 +34,8 @@ import {
 import { buildChatCompletionsBody, LUMO_CHAT_ENDPOINT, type LumoCompletionTarget } from './v2-body.js';
 import { V2StreamProcessor } from './v2-stream.js';
 import { selectNativeTools } from './native-tools.js';
-import { getInstructionsConfig, getLogConfig, getConfigMode, getCustomToolsConfig, getEnableWebSearch, getServerConfig } from '../app/config.js';
+import { getInstructionsConfig, getServerInstructionsConfig, getLogConfig, getConfigMode, getCustomToolsConfig, getEnableWebSearch, getServerConfig } from '../app/config.js';
+import { isAnnounceWithoutToolCall } from '../api/tools/announce.js';
 import { estimatePromptTokens } from '../app/token-estimate.js';
 import { injectInstructionsIntoTurns } from './instructions.js';
 import { NativeToolCallProcessor, type NativeToolCallResult } from '../api/tools/native-tool-call-processor.js';
@@ -77,6 +78,18 @@ function buildBounceInstruction(toolCall: ParsedToolCall): string {
     const toolCallJson = JSON.stringify({ name: toolName, arguments: toolCall.arguments }, null, 2);
     return `${instruction}\n${toolCallJson}`;
 }
+
+/** Coach when the model narrates a tool action but emits no tool-call JSON. */
+function buildAnnounceBounceInstruction(): string {
+    if (getConfigMode() === 'server') {
+        return getServerInstructionsConfig().forAnnounceBounce;
+    }
+    return (
+        'ERROR: You announced a tool action but did not emit a tool call. '
+        + 'Output the custom tool call NOW as JSON text in a ```json code block. No preamble.'
+    );
+}
+
 
 export class LumoClient {
     constructor(
@@ -330,7 +343,15 @@ export class LumoClient {
             modelTier = this.defaultOptions?.modelTier ?? 'auto',
             enableReasoning = this.defaultOptions?.enableReasoning ?? false,
             onReasoning = this.defaultOptions?.onReasoning,
+            coachAnnounceWithoutTool = this.defaultOptions?.coachAnnounceWithoutTool ?? false,
         } = options;
+
+        // Buffer first-pass chunks when coaching so announce text is not leaked before a bounce.
+        const coachAnnounce = coachAnnounceWithoutTool && !isBounce;
+        const bufferedChunks: string[] = [];
+        const mainOnChunk = coachAnnounce
+            ? (chunk: string) => { bufferedChunks.push(chunk); }
+            : onChunk;
 
         const turn = turns[turns.length - 1];
         const logConfig = getLogConfig();
@@ -377,7 +398,7 @@ export class LumoClient {
             tools,
             enableEncryption,
             target: 'message',
-            onChunk,
+            onChunk: mainOnChunk,
             onReasoning,
             suppressBounce: isBounce,
         });
@@ -413,6 +434,26 @@ export class LumoClient {
             const titleResult = titlePromise ? await titlePromise : null;
             const title = titleResult?.content ? postProcessTitle(titleResult.content) : bounced.title;
             return { ...bounced, title };
+        }
+
+        // Coach announce-without-tool once (worker path). isBounce prevents loops.
+        if (coachAnnounce && isAnnounceWithoutToolCall(main.content)) {
+            const bounceInstruction = buildAnnounceBounceInstruction();
+            logger.info('Bouncing announce-without-tool narration');
+            const bounceTurns: Turn[] = [
+                ...turns,
+                { role: Role.Assistant, content: main.content },
+                { role: Role.User, content: bounceInstruction },
+            ];
+            const bounced = await this.chatWithHistory(bounceTurns, onChunk, options, true);
+            const titleResult = titlePromise ? await titlePromise : null;
+            const title = titleResult?.content ? postProcessTitle(titleResult.content) : bounced.title;
+            return { ...bounced, title };
+        }
+
+        // Flush buffered first-pass content to the client (no bounce needed).
+        if (coachAnnounce && onChunk && bufferedChunks.length > 0) {
+            onChunk(bufferedChunks.join(''));
         }
 
         // Build message data for persistence.
