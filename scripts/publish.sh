@@ -73,11 +73,11 @@ else
   docker_push "${IMAGE}:latest"
 fi
 
-# First GHCR package is private. Public = Watchtower on the server can pull
-# without a login. Ignore errors if the package is already public.
+# First GHCR package may be private. Best-effort public so unauthenticated
+# pulls work. User repos are /user/packages; 404 = already public or no pkg yet.
 if command -v gh >/dev/null && [ -n "${GITHUB_TOKEN:-}" ] && [ -n "$OWNER" ]; then
-  gh api --method PATCH "/user/packages/container/${PKG}" -f visibility=public \
-    || gh api --method PATCH "/orgs/${OWNER}/packages/container/${PKG}" -f visibility=public \
+  gh api --method PATCH "/user/packages/container/${PKG}" -f visibility=public >/dev/null 2>&1 \
+    || gh api --method PATCH "/orgs/${OWNER}/packages/container/${PKG}" -f visibility=public >/dev/null 2>&1 \
     || true
 fi
 

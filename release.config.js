@@ -59,14 +59,6 @@ export default {
         assets: ["CHANGELOG.md", "package.json"]
       }
     ],
-    [
-      "@semantic-release/github",
-      {
-        successComment: false,
-        failComment: false,
-        failTitle: false,
-        releasedLabels: false
-      }
-    ]
+    "./scripts/sr-github-release.js"
   ]
 };
