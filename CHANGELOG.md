@@ -1,3 +1,22 @@
+## [0.7.0-dev.10](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.9...v0.7.0-dev.10) (2026-09-16)
+
+### Bug Fixes
+
+* fix(auth): Log out must drop the vault even if Proton revoke fails
+
+  A failed remote revoke left vault.enc in place. GET /auth then
+  reloaded the session, so the button looked dead. Always delete
+  local tokens, always 200, bind the click in the page footer.
+* fix(ci): do not abort when GitHub already has this prerelease tag
+
+  semantic-release creates vX itself (tag + GHCR), then
+  @semantic-release/github POSTs /releases for the same tag and GitHub
+  returns 422 already_exists. That fails the job even though the image
+  already shipped.
+
+  Replace the github plugin with a publisher that PATCHes the existing
+  release. Mute GHCR visibility 404s on user repos (not an org).
+
 ## [0.7.0-dev.9](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.8...v0.7.0-dev.9) (2026-09-16)
 
 ### Features
