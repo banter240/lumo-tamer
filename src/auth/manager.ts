@@ -253,21 +253,19 @@ export class AuthManager {
      */
     async logout(): Promise<void> {
         logger.info('AuthManager: Starting logout...');
-
-        // Stop auto-refresh timer
         this.stopAutoRefresh();
-
-        // Create API for revocation (use provider's API to ensure valid token)
-        const api = this.provider.createApi();
-
-        // Revoke session and delete tokens
-        await performLogout({
-            api,
-            vaultPath: this.vaultPath,
-            revokeRemote: true,
-            deleteLocal: true,
-        });
-
+        try {
+            const api = this.provider.createApi();
+            await performLogout({
+                api,
+                vaultPath: this.vaultPath,
+                revokeRemote: true,
+                deleteLocal: true,
+            });
+        } catch (error) {
+            logger.warn({ error }, 'Remote revoke failed; deleting local vault anyway');
+            await deleteTokenCache(this.vaultPath);
+        }
         logger.info('AuthManager: Logout complete');
     }
 

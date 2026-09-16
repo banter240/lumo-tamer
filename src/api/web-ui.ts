@@ -12,6 +12,8 @@ const THEME_SUN = '<svg class="theme-icon-sun" viewBox="0 0 24 24" width="18" he
 const THEME_MOON = '<svg class="theme-icon-moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 14.3A8.4 8.4 0 1 1 9.7 3 7 7 0 0 0 21 14.3z"/></svg>';
 const THEME_BIND = `(function(){var btn=document.getElementById('themeToggle');if(!btn)return;btn.innerHTML='${THEME_SUN}${THEME_MOON}';function paint(){var dark=document.documentElement.getAttribute('data-theme')==='dark';var sun=btn.querySelector('.theme-icon-sun');var moon=btn.querySelector('.theme-icon-moon');if(sun)sun.style.display=dark?'none':'';if(moon)moon.style.display=dark?'':'none';btn.setAttribute('aria-label',dark?'Dark mode':'Light mode');btn.title=dark?'Dark mode':'Light mode';}paint();btn.addEventListener('click',function(){var next=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',next);try{localStorage.setItem('lumo-tamer-theme',next);}catch(e){}paint();});})();`;
 
+const LOGOUT_BIND = `(function(){var btn=document.getElementById('logout');if(!btn)return;btn.addEventListener('click',function(){btn.disabled=true;btn.textContent='Signing out…';fetch('/auth/logout',{method:'POST'}).catch(function(){}).then(function(){location.href='/auth';});});})();`;
+
 const UPDATE_BIND = `(function(){
   var chip = document.getElementById('updateChip');
   if (!chip) return;
@@ -334,7 +336,7 @@ export function htmlPage(options: {
     </div>
   </div>
   <div id="toast-container" aria-live="polite"></div>
-  <script>${THEME_BIND}${UPDATE_BIND}</script>
+  <script>${THEME_BIND}${UPDATE_BIND}${LOGOUT_BIND}</script>
 </body>
 </html>`;
 }

@@ -87,6 +87,30 @@ describe('auth page', () => {
     expect(body.success).toBe(true);
   });
 
+  it('binds Log out on the signed-in page and still signs out if Proton revoke throws', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use(createAuthRouter({
+      queue: new RequestQueue(1),
+      authManager: {
+        logout: async () => { throw new Error('Proton revoke failed'); },
+        getProvider: () => ({ isValid: () => true, supportsFullApi: () => false, method: 'login' }),
+      } as never,
+    }));
+    const { server, baseUrl } = await listen(app);
+    try {
+      const page = await fetch(`${baseUrl}/auth`);
+      const html = await page.text();
+      expect(html).toContain('id="logout"');
+      expect(html).toContain("fetch('/auth/logout'");
+      const res = await fetch(`${baseUrl}/auth/logout`, { method: 'POST' });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ success: true });
+    } finally {
+      await closeServer(server);
+    }
+  });
+
   it('rejects missing credentials', async () => {
     const res = await fetch(`${baseUrl}/auth/login`, {
       method: 'POST',

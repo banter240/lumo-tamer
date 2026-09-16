@@ -98,19 +98,6 @@ function signedInCard(syncCapable: boolean, method?: string): string {
     </div>
     <a class="btn" href="/config" style="width:100%">Settings</a>
     <button type="button" class="secondary" id="logout" style="width:100%;margin-top:0.5rem">Log out</button>
-    <script>
-      const logoutBtn = document.getElementById('logout');
-      if (logoutBtn) {
-        logoutBtn.addEventListener('click', async () => {
-          logoutBtn.disabled = true;
-          logoutBtn.textContent = 'Signing out…';
-          try {
-            await fetch('/auth/logout', { method: 'POST' });
-          } catch (_) { /* still send them to the form */ }
-          location.href = '/auth';
-        });
-      }
-    </script>
   </div>`;
 }
 
@@ -208,7 +195,9 @@ function renderAuthPage(state: { loggedIn: boolean; sync?: boolean; method?: str
   </details>
   </div>
   <script>
+    (function(){
     const form = document.getElementById('f');
+    if (!form) return;
     const msg = document.getElementById('msg');
     const fail = document.getElementById('fail');
     const otp = document.getElementById('one-time-code');
@@ -311,6 +300,7 @@ function renderAuthPage(state: { loggedIn: boolean; sync?: boolean; method?: str
         signInBtn.textContent = 'Start Proton sign-in';
       }
     });
+    })();
   </script>`;
   return htmlPage({
     title: 'Sign in · lumo-tamer',
@@ -361,25 +351,26 @@ export function createAuthRouter(deps: EndpointDependencies, hooks: AuthRouterHo
   });
 
   router.post('/auth/logout', async (_req: Request, res: Response) => {
-    if (!deps.authManager) {
-      res.json({ success: true, message: 'Already signed out.' });
-      return;
-    }
     try {
       getAutoSyncService()?.stop();
-      await deps.authManager.logout();
-      await hooks.onLoggedOut?.();
-      logger.info('Logout via /auth');
-      res.json({ success: true, message: 'Signed out. You can log in with another account.' });
+      if (deps.authManager) {
+        await deps.authManager.logout();
+      } else if (deps.vaultPath) {
+        await deleteTokenCache(deps.vaultPath);
+      }
     } catch (error) {
       logger.error({ error }, "Can't log out via /auth");
-      try {
-        await hooks.onLoggedOut?.();
-      } catch (_) { /* still return error */ }
-      res.status(500).json({
-        error: error instanceof Error ? error.message : 'Logout failed',
-      });
+      if (deps.vaultPath) {
+        try {
+          await deleteTokenCache(deps.vaultPath);
+        } catch { /* still clear in-memory auth */ }
+      }
     }
+    try {
+      await hooks.onLoggedOut?.();
+    } catch (_) { /* still return success so the UI can show the login form */ }
+    logger.info('Logout via /auth');
+    res.json({ success: true, message: 'Signed out. You can log in with another account.' });
   });
 
   router.post('/auth/login', async (req: Request, res: Response) => {
