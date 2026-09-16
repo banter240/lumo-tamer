@@ -11,6 +11,7 @@ import { VERSION } from './version.js';
 import { getUpdatesConfig, type UpdatesConfig } from './config.js';
 import { logger } from './logger.js';
 import {
+  dockerEngineReachable,
   dockerSocketAvailable,
   pullAndSpawnHelper,
   recreateContainer,
@@ -197,8 +198,9 @@ function applyHint(opts: {
   }
   if (!dockerSocketAvailable(cfg.dockerSocket)) {
     bits.push(
-      `Mount the Docker socket (${cfg.dockerSocket}) to apply from this page, ` +
-      `or: docker pull ${target} && docker compose up -d tamer`,
+      `This container has no Docker socket at ${cfg.dockerSocket}. ` +
+      `Bind-mount it (see docker-compose.yml) to apply from this page, ` +
+      `or on the host: docker pull ${target} && docker compose up -d tamer`,
     );
   }
   return bits.length ? bits.join(' ') : null;
@@ -334,6 +336,7 @@ export async function checkForUpdate(fetcher: typeof fetch = fetch): Promise<Upd
       runningChannel: classified.runningChannel,
     });
     const available = classified.action !== 'none';
+    const sockOk = await dockerEngineReachable(cfg.dockerSocket);
     cached = {
       ...base,
       repository: repo,
@@ -344,7 +347,7 @@ export async function checkForUpdate(fetcher: typeof fetch = fetch): Promise<Upd
       runningChannel: classified.runningChannel,
       checkedAt: new Date().toISOString(),
       error: noTrack,
-      canApply: available && dockerSocketAvailable(cfg.dockerSocket),
+      canApply: available && sockOk,
       applyHint: hint,
     };
     return cached;

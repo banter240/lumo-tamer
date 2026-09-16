@@ -43,11 +43,11 @@ const UPDATE_BIND = `(function(){
       var verb = info.action === 'update' ? 'Update to ' : 'Switch to ';
       var track = info.channel === 'stable' ? 'stable/main ' : 'dev ';
       chip.textContent = verb + (info.latest || track);
-      chip.title = (info.applyHint || '') + (info.canApply ? '' : '');
-      if (!chip.title) {
-        chip.title = info.action === 'downgrade'
-          ? 'Downgrade to this channel. Config may break.'
-          : 'Pull GHCR and recreate this container';
+      chip.title = info.canApply
+        ? (info.applyHint || 'Pull GHCR and recreate this container')
+        : (info.applyHint || 'Cannot apply from this page');
+      if (info.action === 'downgrade' && info.canApply) {
+        chip.title = 'Downgrade to this channel. Config may break.';
       }
       return;
     }
@@ -130,7 +130,8 @@ const UPDATE_BIND = `(function(){
   }
   chip.addEventListener('click', function() {
     if (busy) return;
-    if (info && info.available) apply();
+    if (info && info.available && info.canApply) apply();
+    else if (info && info.available) toast(info.applyHint || 'Cannot apply from this page', false);
     else check(true);
   });
   window.addEventListener('lumo-tamer-config-saved', function(ev) {

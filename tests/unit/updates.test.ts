@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 
 vi.mock('../../src/app/docker-update.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/app/docker-update.js')>();
-  return { ...actual, dockerSocketAvailable: () => false };
+  return { ...actual, dockerSocketAvailable: () => false, dockerEngineReachable: async () => false };
 });
 
 import {

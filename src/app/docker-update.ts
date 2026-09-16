@@ -26,7 +26,17 @@ export function setDockerTransport(next: DockerTransport | null): void {
 }
 
 export function dockerSocketAvailable(socketPath: string): boolean {
-  return existsSync(socketPath);
+  return Boolean(socketPath) && existsSync(socketPath);
+}
+
+export async function dockerEngineReachable(socketPath: string): Promise<boolean> {
+  if (!dockerSocketAvailable(socketPath)) return false;
+  try {
+    const res = await docker(socketPath, 'GET', '/version');
+    return res.status >= 200 && res.status < 300;
+  } catch {
+    return false;
+  }
 }
 
 export function splitImageRef(ref: string): { fromImage: string; tag: string } {
