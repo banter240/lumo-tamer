@@ -249,6 +249,7 @@ export async function handleRequest(
           modelTier: tier,
           enableReasoning,
           onReasoning: surfaceThinking ? emitReasoning : undefined,
+          coachAnnounceWithoutTool: ctx.hasCustomTools,
         })
       );
 

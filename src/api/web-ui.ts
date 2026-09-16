@@ -68,7 +68,7 @@ const UPDATE_BIND = `(function(){
       busy = false;
       paint();
       if (force && info && !info.available && !info.error) {
-        toast('On ' + (info.channel || 'this') + ' track: up to date (' + (info.current || currentVer || '?') + ')', true);
+        toast('Up to date (' + (info.current || currentVer || '?') + ')', true);
       }
       if (force && info && info.error) toast(info.error, false);
     }).catch(function(err) {
@@ -131,7 +131,10 @@ const UPDATE_BIND = `(function(){
     if (info && info.available) apply();
     else check(true);
   });
-  window.addEventListener('lumo-tamer-config-saved', function() { check(true); });
+  window.addEventListener('lumo-tamer-config-saved', function(ev) {
+    var paths = (ev.detail && ev.detail.paths) || [];
+    if (paths.indexOf('updates.channel') !== -1) check(true);
+  });
   check(false);
 })();`;
 

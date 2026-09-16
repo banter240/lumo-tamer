@@ -2,6 +2,8 @@
 
 Use **`lumo-max`** for coding (GLM). Thinking is on by default for that model. Keep `server.customTools.enabled: true` (the default) so OpenCode tools are forwarded.
 
+`build` / `plan` use lumo-max. Isolated jobs can use OpenCode `task` (`lite` / `explore` / `general`). A short reply that ends with a colon and no tool JSON is bounced once (`forAnnounceBounce`).
+
 Lumo's window is **128.0K tokens** (the in-app meter). Integer form: `limit.context` **131072**, `limit.output` **13107** (12.8K reserved to keep chatting). The proxy does not expose that meter; without these limits OpenCode auto-compaction never runs. Details: [README: Context window](../README.md#context-window).
 
 Add Lumo to `provider` in your OpenCode `opencode.json` / `opencode.jsonc`:

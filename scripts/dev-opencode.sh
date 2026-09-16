@@ -23,6 +23,7 @@ cat >"$LUMO_HOME/opencode.json" <<'EOF'
   "$schema": "https://opencode.ai/config.json",
   "model": "lumo-tamer/lumo-max",
   "small_model": "lumo-tamer/lumo-lite",
+  "default_agent": "build",
   "provider": {
     "lumo-tamer": {
       "name": "Lumo (local tamer)",
@@ -47,6 +48,31 @@ cat >"$LUMO_HOME/opencode.json" <<'EOF'
           "options": { "reasoning_effort": "none" }
         }
       }
+    }
+  },
+  "agent": {
+    "build": {
+      "model": "lumo-tamer/lumo-max",
+      "permission": {
+        "task": { "build": "deny", "plan": "deny", "*": "allow" }
+      }
+    },
+    "plan": {
+      "model": "lumo-tamer/lumo-max",
+      "permission": {
+        "task": { "build": "deny", "plan": "deny", "*": "allow" }
+      }
+    },
+    "general": {
+      "model": "lumo-tamer/lumo-max"
+    },
+    "explore": {
+      "model": "lumo-tamer/lumo-max"
+    },
+    "lite": {
+      "mode": "subagent",
+      "model": "lumo-tamer/lumo-lite",
+      "permission": { "task": "deny" }
     }
   },
   "compaction": {
@@ -78,6 +104,6 @@ if ! curl -sf --max-time 1 http://127.0.0.1:3003/health >/dev/null; then
   fi
 fi
 
-echo "OpenCode → http://127.0.0.1:3003 (local). Proxmox config is unused."
+echo "OpenCode → http://127.0.0.1:3003 (local). build/plan=lumo-max, lite=lumo-lite. Proxmox unused."
 cd "$ROOT"
 exec opencode "$@"

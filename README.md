@@ -32,7 +32,7 @@ This tree is a fork of [ZeroTricks/lumo-tamer](https://github.com/ZeroTricks/lum
 - OpenAI-compatible API server with experimental tool support.
 - Select the Lumo 2.0 model tier (Lite/Max) and thinking mode per request, via the OpenAI `model` and `reasoning_effort` fields.
 - Interactive CLI, let Lumo help you execute commands, read, create and edit files.
-- Sync your conversations with Proton to access them on https://lumo.proton.me or in mobile apps.
+- Optional conversation sync to https://lumo.proton.me (needs a Lumo-scoped browser session, not `/auth`).
 - U2L encryption on every real (non-mock) completion. Mock mode is the only path that turns it off.
 
 
@@ -71,9 +71,19 @@ User files (`config.yaml`, `sessions/`, logs) live next to the install by defaul
 tamer auth
 ```
 
-A window opens (Chrome/Edge if installed). Log in to Lumo as usual. Tokens are saved and the window closes. No extra browser container to keep around.
+Opens `/auth`. Use **Start Proton sign-in** (any device) or password on that page. Tokens are saved. No extra browser container.
 
-Headless/Docker: open `http://<host>:3003/auth` (see [authentication](docs/authentication.md)). A Chromium sidecar is last resort.
+`/auth` is enough to chat through the API. It does **not** load or sync Proton chat history (`lumo.proton.me` threads).
+
+**Chat history (desktop):** in `config.yaml` set `auth.browser.launch: true` and `conversations.enableSync: true`, then:
+
+```bash
+tamer auth browser
+```
+
+A Chromium window opens. Log in at **lumo.proton.me** (not `/auth`). When the Lumo chat is visible, tamer extracts cookies and closes the window.
+
+**Chat history (Docker):** start the browser sidecar, log in at `http://<host>:3001` on lumo.proton.me, then `docker compose run --rm -it tamer auth browser`. Full steps: [authentication](docs/authentication.md#browser).
 
 <details>
 <summary><strong>I'm asked to enter a CAPTCHA</strong></summary>
@@ -85,7 +95,7 @@ Log in to Proton in a regular browser from the same IP first. This often clears 
 <summary><strong>Why do I have to enter my password?</strong></summary>
 
 Proton's security model doesn't allow for a simple OAuth authentication. Your credentials are not saved or logged, and security tokens are stored encrypted.
-Alternatively: `tamer auth login` (password, may hit CAPTCHA) or `tamer auth rclone`.
+Open `/auth` and use **Start Proton sign-in** (any device). Password on that page is optional. That does not sync Proton chat history. `tamer auth rclone` is a last-resort fallback.
 
 See [docs/authentication.md](docs/authentication.md) for details and troubleshooting.
 

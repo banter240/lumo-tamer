@@ -42,16 +42,12 @@ export function printAuthHelp(): void {
 tamer auth - Authenticate to Proton
 
 Usage:
-  tamer auth                 Interactive method selection
-  tamer auth <method>        Use specific method (login, browser, rclone)
+  tamer auth                 Open /auth in your browser (Proton sign-in)
+  tamer auth login           Password (scripts)
+  tamer auth browser         Sidecar / CDP extract
+  tamer auth rclone          Paste rclone config
   tamer auth status          Show current authentication status
   tamer auth --help          Show this help
-
-Methods:
-  browser                    Open a window, log in to Lumo, window closes
-                             Docker: CDP to the sidecar (${CDP.DOCKER})
-  login                      Enter Proton credentials (needs Go)
-  rclone                     Paste rclone config section
 
 `);
 }

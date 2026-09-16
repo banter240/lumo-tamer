@@ -374,11 +374,20 @@ export class StreamingToolDetector {
     return startIdx ?? null;
   }
 
-  /**
-   * True when this name is allowed (or no allow-list was configured).
-   */
+  /** Match client tools[] case-insensitively; return the registered name. */
+  private matchKnownTool(toolName: string): string | null {
+    if (!this.knownToolNames) return toolName;
+    if (this.knownToolNames.has(toolName)) return toolName;
+    const lower = toolName.toLowerCase();
+    for (const known of this.knownToolNames) {
+      if (known.toLowerCase() === lower) return known;
+    }
+    return null;
+  }
+
+  /** True when this name is allowed (or no allow-list was configured). */
   private isKnownTool(toolName: string): boolean {
-    return !this.knownToolNames || this.knownToolNames.has(toolName);
+    return this.matchKnownTool(toolName) !== null;
   }
 
   /**
@@ -411,12 +420,13 @@ export class StreamingToolDetector {
     const calls: ParsedToolCall[] = [];
     for (const call of extracted) {
       const toolName = stripToolPrefix(call.name, prefix);
-      if (!this.isKnownTool(toolName)) {
+      const canonical = this.matchKnownTool(toolName);
+      if (!canonical) {
         logger.info({ toolName }, '[tools] not executed: name not in client tools[]');
         continue;
       }
-      logger.info(`Tool call detected: ${toolName} ${JSON.stringify(call.arguments).substring(0, 80)}...`);
-      calls.push({ name: toolName, arguments: call.arguments });
+      logger.info(`Tool call detected: ${canonical} ${JSON.stringify(call.arguments).substring(0, 80)}...`);
+      calls.push({ name: canonical, arguments: call.arguments });
     }
     if (calls.length === 0) {
       this.tryParseToolCall(content);
@@ -434,13 +444,14 @@ export class StreamingToolDetector {
         if (!normalized) return null;
         const prefix = getCustomToolsConfig().prefix;
         const toolName = stripToolPrefix(normalized.name, prefix);
-        if (!this.isKnownTool(toolName)) {
+        const canonical = this.matchKnownTool(toolName);
+        if (!canonical) {
           logger.info({ toolName }, '[tools] not executed: name not in client tools[]');
           return null;
         }
         logger.info(`Tool call detected: ${content.replace(/\n/g, ' ').substring(0, 100)}...`);
         return {
-          name: toolName,
+          name: canonical,
           arguments: normalized.arguments,
         };
       }
@@ -510,6 +521,15 @@ export class StreamingToolDetector {
         }
 
         if (this.state === 'in_code_fence') {
+          const calls = this.parseAllToolCalls(stripFenceNoise(trackerBuffer));
+          if (calls.length > 0) {
+            for (const call of calls) this.noteNamedCall(call, result);
+            this.buffer = '';
+            this.jsonTracker.reset();
+            this.state = 'normal';
+            this.flushHistoryCall(result);
+            return result;
+          }
           result.textToEmit += '```\n' + trackerBuffer;
         } else {
           result.textToEmit += trackerBuffer;

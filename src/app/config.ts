@@ -98,6 +98,7 @@ const serverInstructionsConfigSchema = z.object({
   forTools: z.string(),
   fallback: z.string(),
   forToolBounce: z.string(),
+  forAnnounceBounce: z.string(),
   forJsonFormat: z.string(),
   forToolRequired: z.string(),
   forToolNamed: z.string(),

@@ -212,6 +212,7 @@ async function handleChatRequest(
           onReasoning: surfaceThinking && emitter
             ? (text) => emitter.emitReasoningDelta(text)
             : undefined,
+          coachAnnounceWithoutTool: ctx.hasCustomTools,
         })
       );
 

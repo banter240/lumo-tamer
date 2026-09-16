@@ -683,7 +683,9 @@ function renderConfigPage(isAuthenticated: boolean): string {
         updateButtons();
         showToast('Configuration saved and reloaded.', 'ok');
         await load();
-        window.dispatchEvent(new Event('lumo-tamer-config-saved'));
+        window.dispatchEvent(new CustomEvent('lumo-tamer-config-saved', {
+          detail: { paths: Object.keys(payload.changes || {}) },
+        }));
       } catch (err) {
         showToast(err.message || 'Save failed', 'err');
         saveRestartBtn.disabled = false;

@@ -1,10 +1,7 @@
 # Authentication configuration
 auth:
-  # - login: enter Proton credentials via go-proton-api
-  # - browser: token extraction via browser
-  # - rclone: paste rclone config
-  # See docs/authentication.md
-  method: "browser"
+  # login = /auth (Proton sign-in or password). browser = sidecar/CDP extract. rclone = paste config.
+  method: "login"
 
   # Encrypted vault for secure token storage (AES-256-GCM)
   # Key is stored in OS keychain (desktop) or Docker secret (containers)
@@ -30,9 +27,8 @@ auth:
 
   # Browser-specific config (only used when method: browser)
   browser:
-    # Open a window, wait for you to log in, extract tokens, close the window.
-    # Uses your installed Chrome/Edge when possible so no extra browser image.
-    launch: true
+    # tamer auth browser: launch a Chromium window. Docker sidecar uses launch: false + CDP.
+    launch: false
     # Persistent profile for the launched window (cookies only, not a browser install)
     userDataDir: "sessions/browser-profile"
     # Chrome DevTools Protocol endpoint when launch: false (Docker / already-running Chrome)
@@ -257,10 +253,13 @@ server:
       Put every parameter inside "arguments" and match that tool's schema
       (arrays are JSON arrays [...], objects are {...}). One object per call.
 
-      CRITICAL: Do NOT narrate what you are about to do. Do NOT say "let me read", "I will check", etc.
+      CRITICAL: Do NOT narrate what you are about to do.
       Output the JSON code block IMMEDIATELY. No preamble, no announcement.
       Multiple tools: emit multiple
       DO NOT remove the `{{prefix}}` prefix when calling these tools.
+
+      Prefer the task tool for isolated work; pick a subagent from that tool's schema.
+      Do the work yourself when it is a few tool calls in this conversation.
 
       The user's system will execute them and return results.
       === END PROTOCOL ===
@@ -272,6 +271,7 @@ server:
       arrays stay arrays. One object per call.
       Do NOT use your built-in tool mechanism — output JSON as TEXT in a code block.
       Do NOT narrate — emit the code block directly, no announcement.
+      Isolated work: prefer the task tool (see its schema).
 
 
     # Where to inject instructions when the request has no client tools.
@@ -305,7 +305,10 @@ server:
       Do NOT narrate or announce. Just emit the code block directly.
       Re-output the tool call now as fenced JSON:
 
-
+    forAnnounceBounce: |
+      ERROR: You started a tool action but did not emit a tool call.
+      Output the custom tool call NOW as JSON text in a ```json code block.
+      Copy "name" exactly from your tool list (keep the prefix). No preamble — emit the code block directly.
 
 
 # CLI Configuration

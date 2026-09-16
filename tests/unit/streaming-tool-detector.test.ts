@@ -110,16 +110,47 @@ describe('StreamingToolDetector', () => {
     it('emits incomplete JSON at stream end as text', () => {
       const detector = new StreamingToolDetector();
       const { allText, allToolCalls } = processAll(detector, [
-        '```json\n{"name":"incomplete",',
-        '"arguments":{',
+        '```json\n{"not":"a-tool-call","foo":',
       ]);
 
       expect(allToolCalls).toHaveLength(0);
-      expect(allText).toContain('incomplete');
+      expect(allText).toContain('not');
+    });
+
+    it('salvages a complete tool object when the closing fence is missing', () => {
+      const detector = new StreamingToolDetector({ knownToolNames: ['Task'] });
+      const { allToolCalls, allText } = processAll(detector, [
+        '```\njson\n{"name":"user:Task","arguments":{"description":"smoke","prompt":"write the file","subagent_type":"general"}}',
+      ]);
+      expect(allToolCalls).toEqual([{
+        name: 'Task',
+        arguments: {
+          description: 'smoke',
+          prompt: 'write the file',
+          subagent_type: 'general',
+        },
+      }]);
+      expect(allText).not.toContain('user:Task');
     });
   });
 
   describe('raw JSON detection', () => {
+    it('maps user:task onto a client tool named Task, even without a markdown fence', () => {
+      const blob =
+        'json\n{"name": "user:task", "arguments": {"description": "scan repo", "subagent_type": "general", "prompt": "Read the repo and summarize."}}';
+      const detector = new StreamingToolDetector({ knownToolNames: ['Task'] });
+      const { allText, allToolCalls } = processAll(detector, [blob]);
+      expect(allToolCalls).toEqual([{
+        name: 'Task',
+        arguments: {
+          description: 'scan repo',
+          subagent_type: 'general',
+          prompt: 'Read the repo and summarize.',
+        },
+      }]);
+      expect(allText.replace(/[`\s]/g, '').toLowerCase()).not.toContain('user:task');
+    });
+
     it('detects tool call in raw JSON format', () => {
       const detector = new StreamingToolDetector();
       const { allToolCalls } = processAll(detector, [

@@ -35,8 +35,10 @@ describe('auth page', () => {
     const html = await res.text();
     expect(html).toContain('Proton email');
     expect(html).toContain('/auth/login');
+    expect(html).toContain('id="signInBtn"');
+    expect(html).toContain('/auth/sign-in/start');
     expect(html).toContain('If login fails');
-    expect(html).toContain('Docker / Portainer');
+    expect(html).toContain('Sidecar');
     expect(html).toContain('--profile browser');
     expect(html).toContain('auth browser');
     expect(html).toContain('http://browser:9222');

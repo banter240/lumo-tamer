@@ -2,61 +2,31 @@
  * Authentication module for lumo-tamer
  *
  * Usage (via CLI):
- *   tamer auth              - Interactive authentication
- *   tamer auth login        - Use login method directly
- *   tamer auth browser      - Use browser method directly
- *   tamer auth rclone       - Use rclone method directly
- *   tamer auth status       - Show current auth status
- *
- * Prompts for auth method (with config value as default) and runs extraction:
- * - login: Run interactive SRP authentication (requires Go binary)
- * - browser: Extract tokens from browser session via CDP
- * - rclone: Prompt user to paste rclone config section
+ *   tamer auth              - Open /auth (Proton sign-in)
+ *   tamer auth login        - Password SRP (scripts)
+ *   tamer auth browser      - Sidecar / CDP extract
+ *   tamer auth rclone       - Paste rclone config
+ *   tamer auth status
  *
  * Updates config.yaml with selected values after successful auth.
  */
 
-import * as readline from 'readline';
-import { authConfig, authMethodSchema, getConversationsConfig } from '../app/config.js';
+import { authMethodSchema, getConversationsConfig } from '../app/config.js';
 import { logger } from '../app/logger.js';
 import { runBrowserAuthentication } from './browser/authenticate.js';
 import { runRcloneAuthentication } from './rclone/authenticate.js';
 import { runLoginAuthentication } from './login/authenticate.js';
+import { isDesktopLoginNeededError, beginDesktopLogin, checkDesktopLogin } from './desktop-login.js';
 import { AuthProvider } from './providers/index.js';
 import { printStatus, printSummary, runStatus } from './status.js';
 import { updateAuthConfig } from './update-config.js';
 import { sidecarTeardownHint } from './sidecar.js';
-import type { AuthMethod } from './types.js';
 import { print } from '../app/terminal.js';
+import { openInSystemBrowser } from '../app/open-url.js';
+import { getServerConfig } from '../app/config.js';
+import { PORTS } from '../app/const.js';
 
-const numToMethod: Record<string, AuthMethod> = { '1': 'browser', '2': 'login', '3': 'rclone' };
-const methodToNum: Record<AuthMethod, string> = { browser: '1', login: '2', rclone: '3' };
 
-/**
- * Prompt user to select authentication method
- */
-async function promptForMethod(defaultMethod: AuthMethod): Promise<AuthMethod> {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-
-  print('Select authentication method:');
-  print('  1. browser - Open a window, log in, window closes (recommended)');
-  print('  2. login   - Type email/password (needs Go, may hit CAPTCHA)');
-  print('  3. rclone  - Paste rclone config section');
-  print('');
-
-  const defaultNum = methodToNum[defaultMethod] || '1';
-
-  return new Promise(resolve => {
-    rl.question(`Choice [${defaultNum}]: `, answer => {
-      rl.close();
-      const input = answer.trim() || defaultNum;
-
-      // Try parsing as number first, then as method name
-      const method = numToMethod[input] ?? authMethodSchema.safeParse(input).data ?? 'browser';
-      resolve(method);
-    });
-  });
-}
 
 interface BrowserAuthResult {
   cdpEndpoint: string;
@@ -87,6 +57,20 @@ async function authenticateBrowser(): Promise<BrowserAuthResult> {
  * Run the auth command with the given arguments.
  * Called from CLI after config/logger are initialized.
  */
+function localAuthUrl(): string {
+  return `http://127.0.0.1:${getServerConfig().port || PORTS.TAMER}/auth`;
+}
+
+function offerLocalAuthPage(): void {
+  const url = localAuthUrl();
+  print(`Log in in your browser (any OS):\n  ${url}\n`);
+  try {
+    openInSystemBrowser(url);
+  } catch (error) {
+    logger.warn({ error }, 'Could not open the system browser');
+  }
+}
+
 export async function runAuthCommand(argv: string[]): Promise<void> {
   const subArg = argv[0];
 
@@ -97,10 +81,19 @@ export async function runAuthCommand(argv: string[]): Promise<void> {
 
   print('=== lumo-tamer authentication ===\n');
 
-  // Determine method: from arg or interactive prompt
-  const methodFromArg = authMethodSchema.safeParse(subArg).data;
-  const defaultMethod = authConfig.method;
-  const method = methodFromArg ?? await promptForMethod(defaultMethod);
+  if (!subArg) {
+    offerLocalAuthPage();
+    print('The server must be running (`tamer server`). Sign in on that page.');
+    print('Fallbacks: tamer auth login | tamer auth browser | tamer auth rclone');
+    return;
+  }
+
+  const method = authMethodSchema.safeParse(subArg).data;
+  if (!method) {
+    print(`Unknown method: ${subArg}`);
+    print('Use: tamer auth | tamer auth login | tamer auth browser | tamer auth rclone | tamer auth status');
+    process.exit(1);
+  }
 
   print(`Auth method: ${method}\n`);
 
@@ -118,12 +111,32 @@ export async function runAuthCommand(argv: string[]): Promise<void> {
         await runRcloneAuthentication();
         break;
       case 'login': {
-        const login = await runLoginAuthentication();
-        persistedMethod = login.method;
-        if (login.sync) {
-          logger.info('Conversation sync enabled for this login');
-        } else {
-          logger.warn('Login succeeded without Lumo scope; conversation sync is off');
+        try {
+          const login = await runLoginAuthentication();
+          persistedMethod = login.method;
+          if (login.sync) {
+            logger.info('Conversation sync enabled for this login');
+          } else {
+            logger.warn('Login succeeded without Lumo scope; conversation sync is off');
+          }
+        } catch (error) {
+          if (!isDesktopLoginNeededError(error)) throw error;
+          const started = await beginDesktopLogin();
+          print('Proton blocked password login. Open this link on any device:\n');
+          print(started.url);
+          print('\nWaiting for sign-in…');
+          const deadline = Date.now() + 10 * 60 * 1000;
+          let done = false;
+          while (Date.now() < deadline) {
+            const status = await checkDesktopLogin(started.id);
+            if (status.ready) {
+              persistedMethod = status.method;
+              done = true;
+              break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+          }
+          if (!done) throw new Error('Proton sign-in timed out');
         }
         break;
       }

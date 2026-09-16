@@ -16,9 +16,7 @@ import { writeVault, configuredVault } from '../vault/index.js';
 import { createProtonApi } from '../api-factory.js';
 import { fetchKeys, type FetchedKeys } from '../fetch-keys.js';
 import { hasProtonSyncKeys, isCaptchaAuthError, isAbuseAuthError } from '../sync-capability.js';
-import { runBrowserAuthentication } from '../browser/authenticate.js';
-import { SIDECAR_NEEDED_ERROR } from '../sidecar.js';
-import { isContainerEnv } from '../../app/env.js';
+import { DesktopLoginNeededError } from '../desktop-login.js';
 import type { StoredTokens } from '../types.js';
 
 export type { ProtonAuthCredentials };
@@ -109,12 +107,7 @@ export async function runLoginAuthentication(
         return { sync, method: 'login' };
     } catch (error) {
         if (!isAbuseAuthError(error)) throw error;
-        if (isContainerEnv()) {
-            logger.warn('Proton blocked password login (2028). Container has no Chrome; use the sidecar.');
-            throw new Error(SIDECAR_NEEDED_ERROR);
-        }
-        logger.warn('Proton blocked password login (2028). Opening a browser window instead.');
-        const browser = await runBrowserAuthentication();
-        return { sync: hasProtonSyncKeys(browser.tokens), method: 'browser' };
+        logger.warn('Proton blocked password login (2028). Use Proton sign-in.');
+        throw new DesktopLoginNeededError();
     }
 }

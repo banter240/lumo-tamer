@@ -61,8 +61,8 @@ function sample(value: string, label = 'Example'): ConfigExample[] {
 const COPY: Record<string, FieldCopy> = {
   'auth.method': {
     label: 'Sign-in method',
-    hint: 'How this server fetches Proton tokens. On Docker/Portainer use login, then open /auth.',
-    more: `login: email and password on /auth (SRP). Chat works; sync is on only if Proton granted Lumo scope.\nbrowser (default): a real Chrome window (desktop) or CDP. Needed when Proton returns abuse/CAPTCHA on password login. Docker writes launch: false + ${CDP.DOCKER}; remove only the sidecar afterwards.\nrclone: paste an rclone Proton config. Last resort; usually no Lumo scope, so no sync.`,
+    hint: 'login = /auth. browser and rclone are fallbacks.',
+    more: `login: Proton sign-in or password on /auth. That is the normal path.\nbrowser: extract a Chromium session (CDP sidecar). Not everyday login.\nrclone: paste an rclone Proton config. Last resort.`,
     choices: AUTH_METHODS,
     noDefault: true,
   },
@@ -80,7 +80,7 @@ const COPY: Record<string, FieldCopy> = {
   },
   'auth.browser.launch': {
     label: 'Launch a browser window',
-    hint: 'Open a local Chrome/Edge window, wait for login, extract tokens, close it.',
+    hint: 'Playwright Chromium extract only. Everyday login is /auth in your own browser.',
     more: 'On a desktop with a display, leave this on. Inside Docker there is no Chrome in the tamer image — leave this off. After a sidecar login, tamer writes launch: false for you. Do not turn it back on in the container.',
   },
   'auth.browser.userDataDir': {
@@ -330,8 +330,8 @@ const COPY: Record<string, FieldCopy> = {
   },
   'server.promptTokenEstimationFactor': {
     label: 'Token estimation factor (Beta)',
-    hint: `Fine-tune from auto (${TOKEN_ESTIMATE.AUTO_CALIBRATION}). 1.0 = auto, 0.9 = 90% of auto, not 90% of the old /${TOKEN_ESTIMATE.NAIVE_BYTES_PER_TOKEN} guess.`,
-    more: `Only with auto. If you previously set ${TOKEN_ESTIMATE.AUTO_CALIBRATION} here to compensate, set it back to 1.0 — that scale is now inside auto. Then nudge 0.9 / 1.1 from there.`,
+    hint: 'Multiplier on the auto estimate. 1.0 = unchanged, below 1 counts fewer tokens, above 1 counts more.',
+    more: 'Only used when Token estimation is auto. 0.9 = 90% of the estimate (compaction later). 1.1 = 110% (compaction sooner).',
   },
   'server.customTools.prefix': {
     label: 'Custom tool prefix',
@@ -389,6 +389,11 @@ const COPY: Record<string, FieldCopy> = {
     label: 'Bounce misrouted native calls',
     hint: 'Sent when Lumo misroutes a custom tool through its native pipeline.',
     more: 'The misrouted JSON is appended at runtime after this text. Keep the "like this:" shape so Lumo retries as a fence, not as another native call.',
+  },
+  'server.instructions.forAnnounceBounce': {
+    label: 'Bounce announce-without-tool',
+    hint: 'Sent once when the model announces a tool action but emits no tool-call JSON.',
+    more: 'One bounce per turn. Triggers on a short reply that ends with a dangling colon and has no tool-call JSON.',
   },
   'cli.log.target': {
     label: 'CLI log destination',

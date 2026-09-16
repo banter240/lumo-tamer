@@ -47,3 +47,5 @@ export {
   NativeToolCallProcessor,
   type NativeToolCallResult,
 } from './native-tool-call-processor.js';
+
+export { isAnnounceWithoutToolCall, endsWithDanglingColon } from './announce.js';

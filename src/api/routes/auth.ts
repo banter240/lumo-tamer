@@ -3,6 +3,7 @@
  *
  * - GET  /auth            - Login page (no API key)
  * - POST /auth/login      - Password login (no API key)
+ * - POST /auth/sign-in/start|status|cancel — Proton desktop sign-in (any device)
  * - POST /auth/logout     - Sign out (no API key; server stays up)
  * - POST /v1/auth/logout  - Revoke session, delete tokens, exit process
  * - POST /v1/auth/refresh - Manually trigger token refresh
@@ -21,6 +22,12 @@ import { updateAuthConfig } from '../../auth/update-config.js';
 import { isCaptchaAuthError } from '../../auth/sync-capability.js';
 import { deleteTokenCache } from '../../auth/logout.js';
 import { DESKTOP_CDP_DEFAULT, DOCKER_CDP_DEFAULT, SIDECAR_NEEDED_ERROR } from '../../auth/sidecar.js';
+import {
+  beginDesktopLogin,
+  checkDesktopLogin,
+  cancelDesktopLogin,
+  isDesktopLoginNeededError,
+} from '../../auth/desktop-login.js';
 import { sendAuthRequired } from '../error-handler.js';
 import { htmlPage } from '../web-ui.js';
 import { VERSION } from '../../app/version.js';
@@ -148,29 +155,39 @@ function renderAuthPage(state: { loggedIn: boolean; sync?: boolean; method?: str
     ? signedInCard(!!state.sync, state.method)
     : `<div class="card">
   ${state.sessionNotice ? `<p class="err" id="sessionNotice">${escapeHtml(state.sessionNotice)}</p>` : ''}
-  <p class="lede">${state.sessionNotice ? 'Log in again to restore Lumo. No extra browser container unless Proton blocks password login.' : 'Log in with your Proton account. No extra browser container.'}</p>
-  <form id="f" method="post" action="/auth/login" autocomplete="on">
-    <label for="username">Proton email</label>
-    <input id="username" name="username" type="email" autocomplete="username" required>
-    <label for="password">Password</label>
-    <input id="password" name="password" type="password" autocomplete="current-password" required>
-    <label for="one-time-code">Authenticator code</label>
-    <input id="one-time-code" name="otp" type="text" inputmode="numeric" autocomplete="one-time-code"
-      autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="8" pattern="[0-9]*" placeholder="123456">
-    <button type="submit" style="width:100%;margin-top:1.1rem">Log in</button>
-  </form>
+  <p class="lede">${state.sessionNotice ? 'Log in again to restore Lumo.' : 'Sign in with Proton. Open the link on this phone or any browser.'}</p>
+  <button type="button" id="signInBtn" style="width:100%">Start Proton sign-in</button>
+  <div id="signInPending" hidden style="margin-top:0.85rem">
+    <p class="hint" id="signInHint">Finish sign-in on Proton, keep this page open.</p>
+    <p class="btn-row" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem">
+      <a class="btn" id="signInOpen" href="#" target="_blank" rel="noopener noreferrer" style="flex:1;text-align:center">Open Proton sign-in</a>
+      <button type="button" class="secondary" id="signInCopy">Copy link</button>
+    </p>
+    <p class="hint" id="signInWait" style="margin-top:0.5rem">Waiting for you to finish…</p>
+  </div>
   <p id="msg" class="err" hidden></p>
-  <p class="hint">Password is sent to this server only and is not stored. Stay on this tab until it says signed in.</p>
+  <details class="fail" style="margin-top:1.1rem">
+    <summary>Email and password instead</summary>
+    <form id="f" method="post" action="/auth/login" autocomplete="on" style="margin-top:0.75rem">
+      <label for="username">Proton email</label>
+      <input id="username" name="username" type="email" autocomplete="username" required>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <label for="one-time-code">Authenticator code</label>
+      <input id="one-time-code" name="otp" type="text" inputmode="numeric" autocomplete="one-time-code"
+        autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="8" pattern="[0-9]*" placeholder="123456">
+      <button type="submit" style="width:100%;margin-top:1.1rem">Log in with password</button>
+    </form>
+    <p class="hint">Password is sent to this server only and is not stored. Proton may block this (CAPTCHA / 2028) — use sign-in above.</p>
+  </details>
   <details class="fail" id="fail">
     <summary>If login fails</summary>
     <div class="fail-body">
-      <h3>1. Password or authenticator</h3>
-      <p>Try again. ${AUTH.LOGIN_MAX_ATTEMPTS} attempts per ${AUTH.ATTEMPT_WINDOW_MS / 60_000} minutes.</p>
-      <h3>2. CAPTCHA</h3>
-      <p>Open <code>lumo.proton.me</code> in any browser on the <strong>same internet</strong> as this server, then retry this form.</p>
-      <h3>3. Desktop — Proton 2028 / “unusual activity”</h3>
-      <p>A Chrome window should open. Log in there. This tab updates when tokens are saved. Submitting this form again will not help.</p>
-      <h3>4. Docker / Portainer — 2028</h3>
+      <h3>1. Proton sign-in</h3>
+      <p>Use <strong>Start Proton sign-in</strong>. Open the Proton page on any device, finish login, wait here.</p>
+      <h3>2. Password</h3>
+      <p>${AUTH.LOGIN_MAX_ATTEMPTS} attempts per ${AUTH.ATTEMPT_WINDOW_MS / 60_000} minutes. CAPTCHA: open <code>lumo.proton.me</code> on the same internet, then retry. 2028: password is locked — use Proton sign-in.</p>
+      <h3>3. Sidecar (last resort)</h3>
       <p>This container cannot open a window (and must not try to install Chrome). Start the sidecar, log in, extract tokens, then <strong>remove only the sidecar</strong>. Leave <code>${APP.CONTAINER_NAME}</code> (port ${PORTS.TAMER}) running.</p>
       <p>From the compose directory (often <code>/opt/${APP.NAME}</code>):</p>
       <ol>
@@ -200,7 +217,7 @@ function renderAuthPage(state: { loggedIn: boolean; sync?: boolean; method?: str
       msg.hidden = true;
       const btn = form.querySelector('button[type=submit]');
       btn.disabled = true;
-      btn.textContent = 'Waiting (a browser window may open)...';
+      btn.textContent = 'Signing in…';
       try {
         const body = {
           username: form.username.value,
@@ -219,6 +236,10 @@ function renderAuthPage(state: { loggedIn: boolean; sync?: boolean; method?: str
           otp.focus();
           return;
         }
+        if (data.needDesktopLogin && data.url && data.id) {
+          showDesktopLogin(data.url, data.id);
+          return;
+        }
         if (!res.ok) {
           msg.textContent = data.error || 'Login failed';
           msg.hidden = false;
@@ -233,6 +254,61 @@ function renderAuthPage(state: { loggedIn: boolean; sync?: boolean; method?: str
       } finally {
         btn.disabled = false;
         btn.textContent = 'Log in';
+      }
+    });
+    const signInBtn = document.getElementById('signInBtn');
+    const signInPending = document.getElementById('signInPending');
+    const signInOpen = document.getElementById('signInOpen');
+    const signInCopy = document.getElementById('signInCopy');
+    let signInTimer;
+    let signInId = '';
+    let signInUrl = '';
+    function showDesktopLogin(url, id) {
+      signInId = id;
+      signInUrl = url;
+      signInOpen.setAttribute('href', url);
+      signInPending.hidden = false;
+      msg.hidden = true;
+      if (fail) fail.open = false;
+      if (signInTimer) clearInterval(signInTimer);
+      signInTimer = setInterval(async () => {
+        try {
+          const res = await fetch('/auth/sign-in/status?id=' + encodeURIComponent(id));
+          const data = await res.json();
+          if (data.ready) location.reload();
+          if (!res.ok && data.error) {
+            msg.textContent = data.error;
+            msg.hidden = false;
+            clearInterval(signInTimer);
+          }
+        } catch (_) { /* keep polling */ }
+      }, 2000);
+    }
+    signInCopy.addEventListener('click', async () => {
+      if (!signInUrl) return;
+      try {
+        await navigator.clipboard.writeText(signInUrl);
+        signInCopy.textContent = 'Copied';
+        setTimeout(() => { signInCopy.textContent = 'Copy link'; }, 1500);
+      } catch (_) {
+        msg.textContent = 'Clipboard unavailable';
+        msg.hidden = false;
+      }
+    });
+    signInBtn.addEventListener('click', async () => {
+      signInBtn.disabled = true;
+      signInBtn.textContent = 'Starting…';
+      try {
+        const res = await fetch('/auth/sign-in/start', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Could not start Proton sign-in');
+        showDesktopLogin(data.url, data.id);
+      } catch (err) {
+        msg.textContent = err.message || 'Could not start Proton sign-in';
+        msg.hidden = false;
+      } finally {
+        signInBtn.disabled = false;
+        signInBtn.textContent = 'Start Proton sign-in';
       }
     });
   </script>`;
@@ -348,10 +424,27 @@ export function createAuthRouter(deps: EndpointDependencies, hooks: AuthRouterHo
         res.status(401).json({ needTotp: true, error: '2FA code required' });
         return;
       }
+      if (isDesktopLoginNeededError(error)) {
+        try {
+          const started = await beginDesktopLogin();
+          res.status(401).json({
+            needDesktopLogin: true,
+            url: started.url,
+            id: started.id,
+            error: 'Proton blocked password login. Open Proton sign-in on any device.',
+          });
+          return;
+        } catch (signInError) {
+          logger.error({ signInError }, 'Could not start Proton sign-in');
+          res.status(401).json({
+            error: 'Proton blocked password login, and sign-in could not be started. See “If login fails”.',
+          });
+          return;
+        }
+      }
       const message = error instanceof Error ? error.message : 'Login failed';
       logger.error({ error }, "Can't log in via /auth");
-      const sidecarHint = message === SIDECAR_NEEDED_ERROR
-        || /Could not open a browser|playwright install chromium/i.test(message);
+      const sidecarHint = message === SIDECAR_NEEDED_ERROR;
       res.status(401).json({
         error: isCaptchaAuthError(error)
           ? 'Proton asked for a CAPTCHA. Open lumo.proton.me once from the same internet as this server, then try again.'
@@ -360,6 +453,51 @@ export function createAuthRouter(deps: EndpointDependencies, hooks: AuthRouterHo
             : message.replace(/^Authentication failed: /i, ''),
       });
     }
+  });
+
+  router.post('/auth/sign-in/start', async (_req: Request, res: Response) => {
+    try {
+      const started = await beginDesktopLogin();
+      res.json({ url: started.url, id: started.id });
+    } catch (error) {
+      logger.error({ error }, 'POST /auth/sign-in/start failed');
+      res.status(502).json({
+        error: error instanceof Error ? error.message : 'Could not start Proton sign-in',
+      });
+    }
+  });
+
+  router.get('/auth/sign-in/status', async (req: Request, res: Response) => {
+    const id = typeof req.query.id === 'string' ? req.query.id : '';
+    if (!id) {
+      res.status(400).json({ error: 'Missing id' });
+      return;
+    }
+    try {
+      const result = await checkDesktopLogin(id);
+      if (!result.ready) {
+        res.json({ ready: false });
+        return;
+      }
+      try {
+        updateAuthConfig({ method: result.method });
+      } catch (error) {
+        logger.warn({ error }, 'Could not persist auth.method after Proton sign-in');
+      }
+      await hooks.onAuthenticated?.();
+      res.json({ ready: true, sync: result.sync, method: result.method });
+    } catch (error) {
+      logger.error({ error }, 'GET /auth/sign-in/status failed');
+      res.status(502).json({
+        error: error instanceof Error ? error.message : 'Sign-in poll failed',
+      });
+    }
+  });
+
+  router.post('/auth/sign-in/cancel', (req: Request, res: Response) => {
+    const id = typeof req.body?.id === 'string' ? req.body.id : undefined;
+    cancelDesktopLogin(id);
+    res.json({ ok: true });
   });
 
   /**

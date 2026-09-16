@@ -12,10 +12,8 @@ Authenticating to Proton is not straightforward: different flows depending on us
 
 ```bash
 tamer auth
-# Select method:
-#   1. browser - Open a window, log in, window closes (recommended)
-#   2. login   - Enter Proton credentials (needs Go)
-#   3. rclone  - Paste rclone config section
+# Opens /auth. Use Start Proton sign-in (any device).
+# Fallbacks: tamer auth login | tamer auth browser | tamer auth rclone
 ```
 
 After successful authentication, `config.yaml` is updated with your selected method.
@@ -24,7 +22,7 @@ After successful authentication, `config.yaml` is updated with your selected met
 
 ## Login (`/auth` or `tamer auth login`)
 
-Password login via Go SRP or the `/auth` page. Tries Lumo scope first (sync on). CAPTCHA falls back to Drive-scoped tokens (chat only). Proton 2028 (abuse lock) cannot retry that API; on a desktop a Chrome window opens instead.
+Password login via Go SRP or the `/auth` page. Tries Lumo scope first. CAPTCHA and Proton desktop sign-in fall back to Drive-scoped tokens. **Chat through the API works; Proton conversation history does not** (`lumo.proton.me` threads stay empty). Sync needs a Lumo-scoped browser session (`tamer auth browser`). Proton 2028 (abuse lock) cannot retry the password API; `/auth` then uses Proton’s desktop sign-in URL (`account.proton.me/desktop/login`) on any device.
 
 Uses Proton's SRP (Secure Remote Password) protocol via a Go binary built from [go-proton-api](https://github.com/henrybear327/go-proton-api).
 
@@ -32,7 +30,7 @@ Uses Proton's SRP (Secure Remote Password) protocol via a Go binary built from [
 
 - **Lightweight default for Docker**: `/auth` needs no extra Chromium container
 - **Direct keyPassword access**: Derives the mailbox password needed for encryption
-- **Sync when Proton allows Lumo scope**: otherwise chat still works
+- **Chat API without a Chromium sidecar**: conversation history on Proton is not included
 
 ### Setup
 
@@ -59,8 +57,9 @@ The first SRP attempt uses Lumo's own app version (`web-lumo`). `login.appVersio
 ### Limitations
 
 - **CAPTCHA**: May trigger CAPTCHA. We then retry without Lumo scope (chat only). Same-IP visit to lumo.proton.me usually clears it.
-- **2028 abuse lock**: Password API is blocked. Desktop opens a browser window; Docker needs the sidecar (see below).
-- **TOTP only**: Only supports TOTP for 2FA (no security keys)
+- **2028 abuse lock**: Password API is blocked. `/auth` offers a Proton sign-in link (open on any device). Sidecar is last resort.
+- **No Proton chat history**: `/auth` (password or Proton sign-in) does not sync threads to or from lumo.proton.me. Use `tamer auth browser` for that.
+- **TOTP only** (password form): authenticator codes, not security keys
 
 ### Troubleshooting
 
@@ -74,37 +73,45 @@ The first SRP attempt uses Lumo's own app version (`web-lumo`). `login.appVersio
 
 **Code 2028 / "unusual activity" / appeal-abuse**
 - Proton locked password API for this account/IP. Retrying `/auth/v4` will not help.
-- Desktop: tamer opens a Chrome window. Log in there; wait until `/auth` says logged in.
+- Open the Proton sign-in link on `/auth` (phone is fine). Wait on that page until it says signed in.
 - Docker: start the browser sidecar (see [Headless / Docker](#headless--docker)), log in at `:3001`, then `tamer auth browser`. Stop **and remove** only the sidecar afterwards; leave `lumo-tamer` (port 3003) running.
 
 ---
 
-## Browser
+## Browser (Proton chat history)
 
-Default. `tamer auth` opens a window (system Chrome/Edge if present, otherwise Playwright Chromium), you log in to Lumo, tokens are saved, the window closes. No extra browser container to deploy or leave running.
+`/auth` cannot read lumo.proton.me threads. For that, tamer must extract cookies from a real Lumo session.
 
-CAPTCHA and security keys work like in a normal browser. Sync works when cookies come from lumo.proton.me. `/auth` / password login also syncs if the Lumo-scoped SRP attempt succeeded.
+### Desktop
 
-### Setup
+In `config.yaml`:
 
-```bash
-tamer auth
-# or: tamer auth browser
+```yaml
+conversations:
+  enableSync: true
+auth:
+  method: browser
+  browser:
+    launch: true
 ```
 
-Log in in the window that opens. When you reach the Lumo chat, extraction runs and the window closes.
+Then:
 
-Cookies live in `sessions/browser-profile` (small). The browser binary is whatever is already on the machine.
+```bash
+tamer auth browser
+```
+
+A Chromium window opens (system Chrome/Edge if Playwright can find them, otherwise Playwright Chromium). Log in at **https://lumo.proton.me**. When the Lumo chat UI is up, extraction runs and the window closes. Cookies stay in `sessions/browser-profile`.
+
+Alternatively leave `launch: false` and point `cdpEndpoint` at a Chromium you started with remote debugging (`http://localhost:9222`).
 
 ### Headless / Docker
 
-Start only `tamer` and open `http://<host>:3003/auth`. Type Proton email, password, and 2FA. The server starts without a vault; chat returns 503 until this page succeeds.
+Start only `tamer` and open `http://<host>:3003/auth` for API chat (no history).
 
-`/auth` uses password SRP (Lumo scope when Proton allows it). CAPTCHA retries Drive (chat only). Code 2028 (abuse lock) cannot be retried on the same API; on a **desktop** tamer then opens a normal Chrome window. Inside Docker it does **not** try to launch Chrome (the image has none); the `/auth` error and “If login fails” list tell you to start the sidecar.
+For chat history, use the sidecar (Chromium + noVNC, ~1 GB). Compose keeps it behind `--profile browser`. The tamer image has no Chrome.
 
-The sidecar is a full Chromium+noVNC image (~1 GB). That is a lot just for authentication. Compose keeps it behind `--profile browser` so a normal `up` does not start it. Tamer does not start Compose for you. The tamer image has no Chrome: `launch: true` or `npx playwright install chromium` inside the container will not work.
-
-`tamer auth browser` in Docker connects over CDP (`http://browser:9222`), then writes this into `config.yaml` (do not hand-edit `launch: true` or `localhost:9222`):
+`tamer auth browser` in Docker connects over CDP (`http://browser:9222`), then writes this into `config.yaml` (do not set `launch: true` or `localhost:9222` inside Docker):
 
 ```yaml
 auth:
@@ -155,7 +162,7 @@ Empty = gone. Do not `docker compose down` (that stops tamer too). In Portainer:
 ### Limitations
 
 - **Needs a display** for `launch: true` (normal desktop). Headless servers use CDP or `login`.
-- **Re-auth**: if the refresh token is revoked, run `tamer auth` again (desktop: window opens; Docker: start the sidecar, extract, then remove it).
+- **Re-auth**: if the refresh token is revoked, run `tamer auth browser` again (desktop: window; Docker: sidecar, extract, remove sidecar).
 
 ### Config
 

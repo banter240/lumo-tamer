@@ -388,7 +388,7 @@ async function waitForLumoLogin(page: Page, context: BrowserContext, loginTimeou
 
 async function launchPersistentContext(userDataDir: string): Promise<BrowserContext> {
     await mkdir(userDataDir, { recursive: true });
-    const attempts: Array<{ channel?: 'chrome' | 'msedge'; label: string }> = [
+    const attempts: Array<{ label: string; channel?: 'chrome' | 'msedge' }> = [
         { channel: 'chrome', label: 'system Chrome' },
         { channel: 'msedge', label: 'system Edge' },
         { label: 'Playwright Chromium' },

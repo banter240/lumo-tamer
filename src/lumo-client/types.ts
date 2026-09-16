@@ -146,6 +146,8 @@ export interface LumoClientOptions {
     enableReasoning?: boolean;
     /** Sink for reasoning/thinking chunks (always drained, even if unused). */
     onReasoning?: (content: string) => void;
+    /** Bounce once when a completion looks like a truncated tool announcement. */
+    coachAnnounceWithoutTool?: boolean;
 }
 
 /** Result from a chat request. */
