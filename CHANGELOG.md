@@ -1,3 +1,64 @@
+## [0.7.0-dev.9](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.8...v0.7.0-dev.9) (2026-09-16)
+
+### Features
+
+* feat(auth): Proton desktop sign-in, collapse login paths, bounce dead tool calls
+
+  /auth is the one login. Proton desktop sign-in works on any device (phone
+  included). Password is optional underneath. Chat API works; Proton thread
+  history still needs tamer auth browser. OpenCode stays on lumo-max and can
+  hand isolated jobs to task.
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PROTON DESKTOP SIGN-IN
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - /auth primary action is Start Proton sign-in. Tamer calls Proton's
+    desktop login (account.proton.me/desktop/login), shows Open / Copy,
+    and polls until the session lands.
+  - Password form is folded under Email and password instead. 2028 no
+    longer tries to launch Chrome; it starts the same Proton sign-in.
+  - tamer auth with no args opens /auth via the OS opener (xdg-open /
+    open / start). login / browser / rclone remain CLI fallbacks only.
+  - Default auth.method is login. browser.launch defaults to false
+    (sidecar CDP). Desktop chat history still uses launch: true.
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ONE LOGIN, NOT FOUR
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - Interactive 1/2/3 method prompt is gone.
+  - /auth fail list is Proton sign-in, password, sidecar last resort.
+  - README and docs/authentication.md state /auth does not sync
+    lumo.proton.me threads, and how tamer auth browser does (desktop
+    window vs Docker sidecar on :3001).
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  DEAD TOOL CALLS
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - Bounce a short reply that starts a tool action and dies on a
+    dangling colon, with no tool-call JSON (one bounce per turn).
+  - Salvage a complete tool object when the closing fence is missing.
+  - Match client tools[] case-insensitively (Task vs user:task).
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  OPENCODE WORKERS
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - build/plan stay lumo-max. Isolated jobs can use task: lite
+    (lumo-lite), explore, or general. Task to self (build/plan) denied.
+  - Worker protocol: prefer task for isolated work; pick the subagent
+    from the tool schema.
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  CONFIG UI
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - Save no longer fires the Updates up-to-date toast (only the update
+    chip, or a save that changes updates.channel).
+  - Token-factor copy no longer mentions the old 1.45 /4 scale.
+
 ## [0.7.0-dev.8](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.7...v0.7.0-dev.8) (2026-09-04)
 
 ### Features
