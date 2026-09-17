@@ -1,3 +1,27 @@
+## [0.7.0-dev.11](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.10...v0.7.0-dev.11) (2026-09-17)
+
+### Bug Fixes
+
+* fix(instructions): reduce cold-start refusals and instruction text mangling
+
+  - forTools/forToolsCompact: drop coercion phrasing (TRUST/never-refuse/CRITICAL);
+    describe the JSON-text transport neutrally and justify the roundtrip instead
+  - forToolBounce/forAnnounceBounce + CLI fallback: replace ERROR/YOU MUST with
+    neutral notes, same actionable content
+  - replacePatterns: only rewrite standalone prose 'tool(s)' mentions; stop
+    corrupting identifiers (ha_call_read_tool, tools.browser.back, tools.
+    opencode.models) and qualified phrases; no more double prefixes
+  - applyToolNamePrefix: skip matches followed by ':' or '-' so prose like
+    'pricing: read' and 'read-only' is no longer rewritten to user:read
+
+  Validation: regex unit tests (15/15 pass), yaml parse OK, tsc --noEmit OK.
+* fix(ui): do not POST /v1/update when docker.sock is missing
+
+  The chip still offered Update to x, then apply 409d with a compose
+  hint. Only call apply when the engine socket answers; otherwise
+  show the host pull command. Ping /version so a dead mount is not
+  treated as canApply.
+
 ## [0.7.0-dev.10](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.9...v0.7.0-dev.10) (2026-09-16)
 
 ### Bug Fixes
