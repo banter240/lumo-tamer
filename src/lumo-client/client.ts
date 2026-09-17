@@ -84,8 +84,8 @@ function buildAnnounceBounceInstruction(): string {
         return getServerInstructionsConfig().forAnnounceBounce;
     }
     return (
-        'ERROR: You announced a tool action but did not emit a tool call. '
-        + 'Output the custom tool call NOW as JSON text in a ```json code block. No preamble.'
+        'Note: your last message announced a tool action but did not emit a tool call. '
+        + 'Output the tool call NOW as JSON text in a ```json code block. No preamble.'
     );
 }
 

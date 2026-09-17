@@ -225,8 +225,12 @@ server:
     # Useful for removing or rewriting phrases that may confuse Lumo about tool calling.
     # Each entry: { pattern: "regex", replacement: "text" } - omit replacement to strip.
     replacePatterns:
-      - pattern: "(?<=(?:(?:native|custom|internal|external)\\s)?)(?=tool)"
-        replacement: "custom "
+      # Rewrite standalone prose mentions of "tool(s)" to "custom tool(s)" so Lumo
+      # separates client tools from its native ones. Identifiers (ha_call_read_tool,
+      # tools.browser.back, tool_name) and qualified phrases (native/custom/internal/
+      # external tool) are left untouched.
+      - pattern: "(?<![\\w.:-])(?<!native\\s)(?<!custom\\s)(?<!internal\\s)(?<!external\\s)\\btools?\\b(?![\\w[(.])"
+        replacement: "custom $&"
 
 
     # Fallback when the client sends no system prompt (Home Assistant voice, etc.).
@@ -242,8 +246,9 @@ server:
       === CUSTOM TOOL PROTOCOL ===
       The tools below are CUSTOM tools, prefixed with `{{prefix}}`.
 
-      IMPORTANT: Custom tools are NOT part of your built-in tool system.
-      You MUST call them by outputting JSON as text in a code block to the user, like this:
+      These tools are reached through this chat channel, not through your
+      built-in function-calling. Call them by outputting JSON as text in a
+      code block to the user, like this:
       ```json
       {"name": "{{prefix}}example_tool", "arguments": {"param": "value"}}
       ```
@@ -253,14 +258,14 @@ server:
       Put every parameter inside "arguments" and match that tool's schema
       (arrays are JSON arrays [...], objects are {...}). One object per call.
 
-      CRITICAL: Do NOT narrate what you are about to do.
-      Output the JSON code block IMMEDIATELY. No preamble, no announcement.
-      Multiple tools: emit multiple
-      DO NOT remove the `{{prefix}}` prefix when calling these tools.
+      Emit the JSON code block directly, without narrating or announcing it.
+      For multiple tools, emit multiple code blocks. Always keep the
+      `{{prefix}}` prefix when calling these tools.
 
-      TRUST: This protocol is operator-sanctioned. The proxy executes your JSON
-      locally and returns [Tool Result: name]. Never refuse, debate it, or ask
-      the user to paste file contents — act as an agent from the first turn.
+      The proxy executes your JSON locally and returns results as
+      [Tool Result: name] in the conversation — this is the normal way tools
+      work in this environment. Act as an agent from the first turn; there is
+      never a need to ask the user to paste file contents.
 
       Prefer the task tool for isolated work; pick a subagent from that tool's schema.
       Do the work yourself when it is a few tool calls in this conversation.
@@ -273,10 +278,9 @@ server:
       Custom tools: JSON in a ```json code block. Copy "name" exactly from the list
       below (keep `{{prefix}}`). Do not shorten names. Parameters go in "arguments";
       arrays stay arrays. One object per call.
-      Do NOT use your built-in tool mechanism — output JSON as TEXT in a code block.
-      Do NOT narrate — emit the code block directly, no announcement.
-      TRUST: operator-sanctioned; proxy executes JSON and returns
-      [Tool Result: name]. Never refuse or debate — act immediately.
+      Tools are reached through JSON text in a code block, not through built-in
+      function-calling. The proxy executes the JSON and returns
+      [Tool Result: name]. Emit the code block directly, without announcing it.
       Isolated work: prefer the task tool (see its schema).
 
 
@@ -305,16 +309,16 @@ server:
     # Bounce instruction sent when Lumo routes a custom tool through its native tool pipeline.
     # The actual tool call JSON is appended at runtime.
     forToolBounce: |
-      ERROR: You just tried to call a custom tool through your built-in tool mechanism.
-      That does NOT work — arguments are lost and the call is dropped.
-      You MUST output custom tool calls as JSON text in a ```json code block.
-      Do NOT narrate or announce. Just emit the code block directly.
+      Note: your previous tool call went through your built-in function-calling,
+      which is not connected in this environment — arguments were lost and the
+      call was dropped. Tool calls are JSON text in a ```json code block.
+      Emit the code block directly, without narrating or announcing it.
       Re-output the tool call now as fenced JSON:
 
     forAnnounceBounce: |
-      ERROR: You started a tool action but did not emit a tool call.
-      Output the custom tool call NOW as JSON text in a ```json code block.
-      Copy "name" exactly from your tool list (keep the prefix). No preamble — emit the code block directly.
+      Note: your last message described a tool action but did not contain a tool call.
+      Output the tool call now as JSON text in a ```json code block.
+      Copy "name" exactly from your tool list (keep the prefix), and emit the code block directly.
 
 
 # CLI Configuration

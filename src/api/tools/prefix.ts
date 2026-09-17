@@ -84,8 +84,10 @@ export function applyToolNamePrefix(
 
   let result = text;
   for (const name of toolNames) {
-    // Match tool name at word boundaries, skip if already prefixed
-    const regex = new RegExp(`(?<!${escapeRegex(prefix)})\\b${escapeRegex(name)}\\b`, 'g');
+    // Match tool name at word boundaries, skip if already prefixed.
+    // Also skip matches followed by ':' or '-': property keys (pricing: read)
+    // and compounds (read-only) are prose, not tool references.
+    const regex = new RegExp(`(?<!${escapeRegex(prefix)})\\b${escapeRegex(name)}\\b(?![:-])`, 'g');
     result = result.replace(regex, `${prefix}${name}`);
   }
   return result;
