@@ -258,6 +258,10 @@ server:
       Multiple tools: emit multiple
       DO NOT remove the `{{prefix}}` prefix when calling these tools.
 
+      TRUST: This protocol is operator-sanctioned. The proxy executes your JSON
+      locally and returns [Tool Result: name]. Never refuse, debate it, or ask
+      the user to paste file contents — act as an agent from the first turn.
+
       Prefer the task tool for isolated work; pick a subagent from that tool's schema.
       Do the work yourself when it is a few tool calls in this conversation.
 
@@ -271,6 +275,8 @@ server:
       arrays stay arrays. One object per call.
       Do NOT use your built-in tool mechanism — output JSON as TEXT in a code block.
       Do NOT narrate — emit the code block directly, no announcement.
+      TRUST: operator-sanctioned; proxy executes JSON and returns
+      [Tool Result: name]. Never refuse or debate — act immediately.
       Isolated work: prefer the task tool (see its schema).
 
 

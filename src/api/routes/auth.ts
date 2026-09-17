@@ -149,6 +149,7 @@ function renderAuthPage(state: { loggedIn: boolean; sync?: boolean; method?: str
     <p class="btn-row" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem">
       <a class="btn" id="signInOpen" href="#" target="_blank" rel="noopener noreferrer" style="flex:1;text-align:center">Open Proton sign-in</a>
       <button type="button" class="secondary" id="signInCopy">Copy link</button>
+      <button type="button" class="secondary" id="signInNew">New link</button>
     </p>
     <p class="hint" id="signInWait" style="margin-top:0.5rem">Waiting for you to finish…</p>
   </div>
@@ -265,6 +266,12 @@ function renderAuthPage(state: { loggedIn: boolean; sync?: boolean; method?: str
           const res = await fetch('/auth/sign-in/status?id=' + encodeURIComponent(id));
           const data = await res.json();
           if (data.ready) location.reload();
+          if (data.expired) {
+            clearInterval(signInTimer);
+            msg.textContent = 'This sign-in link expired. Tap “New link” and try again.';
+            msg.hidden = false;
+            return;
+          }
           if (!res.ok && data.error) {
             msg.textContent = data.error;
             msg.hidden = false;
@@ -273,6 +280,29 @@ function renderAuthPage(state: { loggedIn: boolean; sync?: boolean; method?: str
         } catch (_) { /* keep polling */ }
       }, 2000);
     }
+    const signInNew = document.getElementById('signInNew');
+    signInNew.addEventListener('click', async () => {
+      signInNew.disabled = true;
+      try {
+        if (signInId) {
+          await fetch('/auth/sign-in/cancel', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: signInId }),
+          }).catch(() => {});
+        }
+        const res = await fetch('/auth/sign-in/start', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Could not start Proton sign-in');
+        showDesktopLogin(data.url, data.id);
+        msg.hidden = true;
+      } catch (err) {
+        msg.textContent = err.message || 'Could not start Proton sign-in';
+        msg.hidden = false;
+      } finally {
+        signInNew.disabled = false;
+      }
+    });
     signInCopy.addEventListener('click', async () => {
       if (!signInUrl) return;
       try {
@@ -467,7 +497,7 @@ export function createAuthRouter(deps: EndpointDependencies, hooks: AuthRouterHo
     try {
       const result = await checkDesktopLogin(id);
       if (!result.ready) {
-        res.json({ ready: false });
+        res.json({ ready: false, expired: result.expired === true });
         return;
       }
       try {

@@ -103,12 +103,12 @@ export async function beginDesktopLogin(): Promise<DesktopLoginStart> {
 }
 
 export async function checkDesktopLogin(id: string): Promise<
-  | { ready: false }
+  | { ready: false; expired?: boolean }
   | { ready: true; sync: boolean; method: 'login' }
 > {
   dropExpired();
   const item = pending.get(id);
-  if (!item) return { ready: false };
+  if (!item) return { ready: false, expired: true };
 
   const { status, json } = await protonGet(
     item.endpoint.api,
