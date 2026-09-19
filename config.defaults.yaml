@@ -184,6 +184,26 @@ server:
     # Set to "" to disable prefixing.
     prefix: "user:"
 
+    # Reply recovery: bounce Lumo when it thinks but never emits a tool-call JSON block.
+    recovery:
+      # Bounce replies that end on a dangling colon after announcing an action.
+      bounceDanglingColon: true
+      # Bounce replies that narrate a tool call in prose ("[Assistant tool call]: ...").
+      bounceNarration: true
+      # Bounce replies with no message text at all (thinking-only loops).
+      bounceBlankReply: true
+      # Max total reply length (chars) still eligible for a dangling-colon bounce.
+      danglingColonMaxLength: 2000
+      # Max last-line length (chars) still eligible for a dangling-colon bounce.
+      danglingColonLastLineMaxLength: 500
+
+    # Tool routing: how native Proton tools and custom (JSON) tools coexist.
+    routing:
+      # "auto"    - advertise native tools only when no custom tools are active (recommended)
+      # "always"  - always advertise native tools (pre-fix behavior; can confuse Lumo)
+      # "never"   - never advertise native tools
+      nativeTools: "auto"
+
   # Prompt token estimation mode for OpenCode compaction.
   # Proton doesn't report input tokens, so we estimate them to trigger compaction correctly.
   #   "auto" - UTF-8 bytes / (4/1.45). Factor 1.0 = that baseline.
@@ -316,8 +336,9 @@ server:
       Re-output the tool call now as fenced JSON:
 
     forAnnounceBounce: |
-      Note: your last message described a tool action but did not contain a tool call.
-      Output the tool call now as JSON text in a ```json code block.
+      Note: your last message ended without emitting a tool call (it either only
+      announced the action, narrated it in prose, or contained no message text at all).
+      Output the tool call now as JSON text in a fenced json code block.
       Copy "name" exactly from your tool list (keep the prefix), and emit the code block directly.
 
 

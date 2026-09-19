@@ -14,6 +14,7 @@ export interface ConfigCategory {
   id: string;
   title: string;
   blurb: string;
+  parent?: string; // if set, this is a sub-category shown indented under its parent
 }
 
 export type FieldKindOverride = 'secret' | 'json';
@@ -28,19 +29,56 @@ export interface FieldCopy {
   noDefault?: boolean;
 }
 
-/** Sidebar groups on /config. `prompts` is titled Advanced (the text Lumo sees). */
+/** Sidebar groups on /config, ordered by priority for a normal user:
+ * setup first (Sign-in, Server), then daily knobs (Models, Tools, Conversations,
+ * Commands, Prompts), then maintenance (Logging, Updates), niche surfaces (CLI),
+ * and Expert last. Every main category has at least one sub.
+ * Rule: main categories with subs show no own fields; clicking the parent aggregates all children. */
 export const CONFIG_CATEGORIES: ConfigCategory[] = [
-  { id: 'api', title: 'Server', blurb: 'Listen port, API key, and request size. Changing the port does not update Docker.' },
-  { id: 'models', title: 'Models', blurb: 'Which Lumo tiers clients can pick, and whether thinking is on by default.' },
-  { id: 'tools', title: 'Tools', blurb: 'Native Proton tools and tools from Home Assistant, OpenCode, and others.' },
-  { id: 'chats', title: 'Conversations', blurb: 'Proton sync, Home Assistant grouping, and where threads are stored.' },
-  { id: 'logging', title: 'Logging', blurb: 'How noisy logs are and whether chat text is written to disk.' },
-  { id: 'auth', title: 'Sign-in', blurb: 'How this server fetches Proton tokens. Prefer login via /auth on Docker.' },
-  { id: 'commands', title: 'Commands', blurb: 'Slash commands in chat, plus an optional spoken wakeword.' },
-  { id: 'updates', title: 'Updates', blurb: 'GitHub channel, periodic check, and Docker self-update via the engine socket.' },
-  { id: 'prompts', title: 'Advanced', blurb: 'Prompt text Lumo actually sees. Tool-call protocol and fallback voice copy.' },
-  { id: 'cli', title: 'CLI', blurb: 'Desktop tamer CLI only. Local bash/read/edit blocks on this machine.' },
-  { id: 'expert', title: 'Expert', blurb: 'Vault paths, mock mode, Handlebars glue, metrics. Leave these unless you know why.' },
+  // Setup
+  { id: 'auth', title: 'Sign-in', blurb: 'How this server authenticates with Proton.' },
+  { id: 'authGeneral', title: 'General', parent: 'auth', blurb: 'Sign-in method selector.' },
+  { id: 'refresh', title: 'Token Refresh', parent: 'auth', blurb: 'Keep Proton tokens fresh for long sessions.' },
+  { id: 'server', title: 'Server', blurb: 'HTTP surface: port, API key, and request limits.' },
+  { id: 'serverGeneral', title: 'General', parent: 'server', blurb: 'Listen port, API key, request size limits.' },
+  { id: 'metrics', title: 'Metrics', parent: 'server', blurb: 'Prometheus /metrics endpoint and runtime counters.' },
+  // Daily use
+  { id: 'models', title: 'Models', blurb: 'Lumo tiers and reasoning defaults.' },
+  { id: 'modelTiers', title: 'Tiers', parent: 'models', blurb: 'Model names, default tier, aliases.' },
+  { id: 'reasoning', title: 'Reasoning', parent: 'models', blurb: 'Thinking effort defaults.' },
+  { id: 'tools', title: 'Tools', blurb: 'Native Proton tools and custom (JSON) tool integration.' },
+  { id: 'toolsGeneral', title: 'General', parent: 'tools', blurb: 'Web search and custom tool master switch.' },
+  { id: 'routing', title: 'Routing', parent: 'tools', blurb: 'Coexistence of native and custom tools.' },
+  { id: 'recovery', title: 'Reply Recovery', parent: 'tools', blurb: 'Bounce malformed tool calls and thinking loops.' },
+  { id: 'chats', title: 'Conversations', blurb: 'Thread storage and Proton syncing.' },
+  { id: 'chatStorage', title: 'Storage', parent: 'chats', blurb: 'Database path, fallback store, and ID derivation.' },
+  { id: 'sync', title: 'Proton Sync', parent: 'chats', blurb: 'Mirror conversations to Proton servers.' },
+  { id: 'commands', title: 'Commands', blurb: 'Slash commands and optional spoken wakeword.' },
+  { id: 'commandsGeneral', title: 'General', parent: 'commands', blurb: 'Enable commands and configure the wakeword.' },
+  { id: 'prompts', title: 'Prompts', blurb: 'Instruction text Lumo sees and injection points.' },
+  { id: 'promptsGeneral', title: 'General', parent: 'prompts', blurb: 'Fallback prompt, JSON-format nudge, and injection point.' },
+  // Maintenance
+  { id: 'logs', title: 'Logging', blurb: 'Log levels, destinations, and privacy settings.' },
+  { id: 'logsGeneral', title: 'General', parent: 'logs', blurb: 'Log verbosity, file output, and message privacy.' },
+  { id: 'updates', title: 'Updates', blurb: 'GitHub release checks and Docker self-update.' },
+  { id: 'updatesGeneral', title: 'General', parent: 'updates', blurb: 'Release channel, repository, check interval.' },
+  { id: 'docker', title: 'Docker Self-Update', parent: 'updates', blurb: 'Docker socket access and auto-apply settings.' },
+  // Niche surfaces
+  { id: 'cli', title: 'CLI', blurb: 'Desktop tamer CLI only.' },
+  { id: 'cliGeneral', title: 'General', parent: 'cli', blurb: 'Log level and web search for local chats.' },
+  { id: 'cliActions', title: 'Local Actions', parent: 'cli', blurb: 'bash/read/edit blocks the CLI may run locally.' },
+  { id: 'cliPrompts', title: 'Instructions', parent: 'cli', blurb: 'Instructions the CLI injects before your message.' },
+  // Internals
+  { id: 'expert', title: 'Expert', blurb: 'Vault paths, mock mode, raw templates, internals. Leave these alone.' },
+  { id: 'expertVault', title: 'Vault', parent: 'expert', blurb: 'Encrypted token storage and its key material.' },
+  { id: 'expertLogin', title: 'Login Binary', parent: 'expert', blurb: 'proton-auth Go binary path and spoofed client headers.' },
+  { id: 'expertBrowser', title: 'Browser Extract', parent: 'expert', blurb: 'Chromium sidecar extraction for browser sign-in.' },
+  { id: 'expertMock', title: 'Mock Mode', parent: 'expert', blurb: 'Canned Proton responses. Development only.' },
+  { id: 'expertTemplates', title: 'Raw Templates', parent: 'expert', blurb: 'Handlebars templates and regex replace patterns.' },
+  { id: 'expertDump', title: 'API Dump', parent: 'expert', blurb: 'One JSON line per Proton API call, no auth headers.' },
+  { id: 'expertCompaction', title: 'Token Estimation', parent: 'expert', blurb: 'Compaction token estimate factor for OpenCode sessions.' },
+  { id: 'expertExecutors', title: 'CLI Executors', parent: 'expert', blurb: 'Language-to-command map for CLI code blocks.' },
+  { id: 'expertMisc', title: 'Miscellaneous', parent: 'expert', blurb: 'Anything that fits nowhere else. Usually safe to ignore.' },
 ];
 
 const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'];
@@ -59,6 +97,37 @@ function sample(value: string, label = 'Example'): ConfigExample[] {
 }
 
 const COPY: Record<string, FieldCopy> = {
+  'server.customTools.recovery.bounceDanglingColon': {
+    label: 'Bounce dangling-colon replies',
+    hint: 'Bounce when Lumo announces an action and ends on a colon without a tool call.',
+    more: `Lumo sometimes writes "Let me read the config:" and stops — the tool call never follows. With this on, tamer detects the dangling colon and retries once with a reminder to emit the JSON block. Turn off if you want such half-answers passed through unchanged.`,
+  },
+  'server.customTools.recovery.bounceNarration': {
+    label: 'Bounce narrated tool calls',
+    hint: 'Bounce “[Assistant tool call]: …” prose instead of a JSON code block.',
+    more: `When custom tools are active, Lumo occasionally narrates the call in prose (“[Assistant tool call]: read the file”) instead of emitting the JSON code block the proxy executes. This detects that pattern and bounces the reply with a corrective instruction.`,
+  },
+  'server.customTools.recovery.bounceBlankReply': {
+    label: 'Bounce thinking-only replies',
+    hint: 'Bounce replies with no message text at all (thought loops).',
+    more: `Lumo can burn an entire reply on internal reasoning and return zero message text, looping forever while “thinking”. With this on, tamer detects the empty content and retries with a nudge to answer visibly.`,
+  },
+  'server.customTools.recovery.danglingColonMaxLength': {
+    label: 'Dangling-colon max total length',
+    hint: 'Chars; longer replies are passed through unmodified. Default 2000.',
+    more: `Safety valve for the dangling-colon detector: a long reply ending in a colon is usually a legitimate answer (a list, code), not a stalled tool announcement. Lowering this makes the bounce trigger more often; raising it risks bouncing real answers.`,
+  },
+  'server.customTools.recovery.danglingColonLastLineMaxLength': {
+    label: 'Dangling-colon max last-line length',
+    hint: 'Chars for the final line. Default 500.',
+    more: `Same idea as the total-length cap, but for the last line of the reply. A very long final line before a colon suggests prose (e.g. pasted output), not an announcement about to emit a tool call.`,
+  },
+  'server.customTools.routing.nativeTools': {
+    label: 'Native tool routing',
+    hint: 'auto = hide native tools when custom tools are active. Leave on auto.',
+    more: `auto hides Lumo's native tools (web search etc.) whenever a client sends custom tools — mixing both confuses Lumo into announcing instead of calling. always forces native tools on (pre-fix behavior, useful for debugging). never disables them entirely.`,
+    choices: ['auto', 'always', 'never'],
+  },
   'auth.method': {
     label: 'Sign-in method',
     hint: 'login = /auth. browser and rclone are fallbacks.',
@@ -572,41 +641,46 @@ export function choicesFor(path: string): string[] | undefined {
 }
 
 export function fieldCategory(path: string): string {
-  if (
-    path.startsWith('auth.vault.')
-    || path.startsWith('auth.login.')
-    || path.startsWith('auth.browser.')
-    || path.startsWith('test.')
-    || path.startsWith('server.metrics.')
-    || path.endsWith('.template')
-    || path.includes('replacePatterns')
-    || path === 'log.dumpApiPath'
-  ) {
-    return 'expert';
-  }
-  if (path.startsWith('cli.instructions.')) return 'cli';
-  if (path.includes('.instructions.')) return 'prompts';
-  if (path.startsWith('cli.')) return 'cli';
-  if (path.startsWith('auth.')) return 'auth';
-  if (path.startsWith('log.') || path.includes('.log.')) return 'logging';
-  if (path.startsWith('conversations.')) return 'chats';
-  if (path.startsWith('commands.')) return 'commands';
-  if (path.startsWith('updates.')) return 'updates';
-  if (
-    path === 'server.enableWebSearch'
-    || path.startsWith('server.customTools.')
-  ) {
-    return 'tools';
-  }
+  // Sub-categories (specific paths before their parents' broad prefixes).
+  // Rule: parents with sub-categories keep no fields of their own.
+  if (path.startsWith('server.customTools.recovery.')) return 'recovery';
+  if (path.startsWith('server.customTools.routing.')) return 'routing';
+  if (path === 'server.customTools.enabled' || path === 'server.customTools.prefix') return 'toolsGeneral';
+  if (path === 'server.enableWebSearch') return 'toolsGeneral';
+  if (path.startsWith('server.metrics.')) return 'metrics';
+  if (path.startsWith('server.reasoning.')) return 'reasoning';
   if (
     path === 'server.apiModelName'
     || path === 'server.defaultModelTier'
     || path === 'server.allowedModels'
     || path === 'server.extraModels'
-    || path.startsWith('server.reasoning.')
   ) {
-    return 'models';
+    return 'modelTiers';
   }
-  if (path.startsWith('server.')) return 'api';
-  return 'expert';
+  if (path === 'conversations.enableSync' || path === 'conversations.projectName') return 'sync';
+  if (path.startsWith('conversations.')) return 'chatStorage';
+  if (path.startsWith('auth.autoRefresh.')) return 'refresh';
+
+  // Expert internals — things a normal user should never need to touch.
+  if (path.startsWith('auth.vault.')) return 'expertVault';
+  if (path.startsWith('auth.login.')) return 'expertLogin';
+  if (path.startsWith('auth.browser.')) return 'expertBrowser';
+  if (path.startsWith('test.')) return 'expertMock';
+  if (path.endsWith('.template') || path.includes('replacePatterns')) return 'expertTemplates';
+  if (path === 'log.dumpApiPath') return 'expertDump';
+  if (path.startsWith('server.promptTokenEstimation')) return 'expertCompaction';
+
+  if (path.startsWith('cli.instructions.')) return 'cliPrompts';
+  if (path.startsWith('cli.localActions.executors.')) return 'expertExecutors';
+  if (path.startsWith('cli.localActions.')) return 'cliActions';
+  if (path.startsWith('cli.')) return 'cliGeneral';
+
+  if (path.includes('.instructions.')) return 'promptsGeneral';
+  if (path.startsWith('auth.')) return 'authGeneral';
+  if (path.startsWith('log.') || path.includes('.log.')) return 'logsGeneral';
+  if (path.startsWith('commands.')) return 'commandsGeneral';
+  if (path === 'updates.autoApply' || path === 'updates.dockerSocket') return 'docker';
+  if (path.startsWith('updates.')) return 'updatesGeneral';
+  if (path.startsWith('server.')) return 'serverGeneral';
+  return 'expertMisc';
 }

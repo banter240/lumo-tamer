@@ -56,11 +56,13 @@ describe('walkConfigFields', () => {
     expect(fields.find((f) => f.path === 'server.allowedModels')?.kind).toBe('stringList');
     expect(fields.find((f) => f.path === 'server.enableWebSearch')?.hint).toMatch(/web_search/i);
     expect(fields.find((f) => f.path === 'server.enableWebSearch')?.label).toMatch(/web search/i);
-    expect(fields.find((f) => f.path === 'server.enableWebSearch')?.category).toBe('tools');
-    expect(fields.find((f) => f.path === 'server.instructions.forTools')?.category).toBe('prompts');
-    expect(fields.find((f) => f.path === 'server.instructions.template')?.category).toBe('expert');
-    expect(fieldCategory('cli.instructions.forLocalActions')).toBe('cli');
-    expect(fieldCategory('cli.instructions.template')).toBe('expert');
+    expect(fields.find((f) => f.path === 'server.enableWebSearch')?.category).toBe('toolsGeneral');
+    expect(fields.find((f) => f.path === 'server.instructions.forTools')?.category).toBe('promptsGeneral');
+    expect(fields.find((f) => f.path === 'server.instructions.template')?.category).toBe('expertTemplates');
+    expect(fieldCategory('cli.instructions.forLocalActions')).toBe('cliPrompts');
+    expect(fieldCategory('cli.instructions.template')).toBe('expertTemplates');
+    expect(fieldCategory('cli.localActions.executors.python')).toBe('expertExecutors');
+    expect(fieldCategory('server.promptTokenEstimationFactor')).toBe('expertCompaction');
   });
 
   it('aliases CLI injectInto copy and keeps a distinct label', () => {

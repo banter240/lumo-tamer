@@ -250,6 +250,7 @@ export async function handleRequest(
           enableReasoning,
           onReasoning: surfaceThinking ? emitReasoning : undefined,
           coachAnnounceWithoutTool: ctx.hasCustomTools,
+          useNativeTools: !ctx.hasCustomTools,
         })
       );
 

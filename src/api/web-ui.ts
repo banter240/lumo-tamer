@@ -14,6 +14,9 @@ const THEME_BIND = `(function(){var btn=document.getElementById('themeToggle');i
 
 const LOGOUT_BIND = `(function(){var btn=document.getElementById('logout');if(!btn)return;btn.addEventListener('click',function(){btn.disabled=true;btn.textContent='Signing out…';fetch('/auth/logout',{method:'POST'}).catch(function(){}).then(function(){location.href='/auth';});});})();`;
 
+// Header restart button (both pages). Distinct id: the config pane has its own restartBtn.
+const RESTART_BIND = `(function(){var btn=document.getElementById('uiRestartBtn');if(!btn)return;btn.addEventListener('click',function(){if(btn.disabled)return;if(!confirm('Restart the server now?'))return;btn.disabled=true;btn.style.opacity='0.5';fetch('/v1/restart',{method:'POST'}).catch(function(){}).then(function(){var tries=0;(function poll(){tries++;if(tries>60){alert('Server did not come back. Docker should restart it; if you started it by hand, start it again, then press F5.');return;}setTimeout(function(){fetch('/health',{cache:'no-store'}).then(function(r){if(r.ok){location.reload();}else{poll();}}).catch(function(){poll();});},500);})();});});})();`;
+
 const UPDATE_BIND = `(function(){
   var chip = document.getElementById('updateChip');
   if (!chip) return;
@@ -196,6 +199,7 @@ export const protonUiCss = `
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; }
+html { scrollbar-gutter: stable; }
 body {
   font-family: Inter, system-ui, sans-serif;
   background: var(--glow), var(--bg);
@@ -219,14 +223,14 @@ a:hover { text-decoration: underline; }
 .brand h1 { font-size: 1.15rem; margin: 0; letter-spacing: -0.02em; }
 .brand p { margin: 0; color: var(--muted); font-size: 0.82rem; font-weight: 500; }
 .brand-actions { margin-left: auto; display: flex; gap: 0.4rem; align-items: center; position: relative; }
-.theme-btn, a.icon-btn {
+.theme-btn, .icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 2.25rem; height: 2.25rem; padding: 0; flex: none;
   border-radius: 10px; border: 1px solid var(--line);
   background: var(--card); color: var(--text);
   box-shadow: none; text-decoration: none;
 }
-.theme-btn:hover, a.icon-btn:hover { background: var(--purple-soft); color: var(--purple); }
+.theme-btn:hover, .icon-btn:hover { background: var(--purple-soft); color: var(--purple); }
 a.icon-btn.current { background: var(--purple-soft); color: var(--purple); }
 .card {
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
@@ -329,6 +333,7 @@ export function htmlPage(options: {
         <button type="button" class="update-chip" id="updateChip">Updates</button>
         ${iconBtn(REPO_URL, 'GitHub', ICON_GITHUB, ' target="_blank" rel="noopener noreferrer"')}
         <button type="button" class="theme-btn" id="themeToggle" aria-label="Toggle theme"></button>
+        <button type="button" class="icon-btn" id="uiRestartBtn" aria-label="Restart server" title="Restart server">${ICON_RESTART}</button>
         ${navBtn}
       </div>
     </div>
@@ -337,7 +342,7 @@ export function htmlPage(options: {
     </div>
   </div>
   <div id="toast-container" aria-live="polite"></div>
-  <script>${THEME_BIND}${UPDATE_BIND}${LOGOUT_BIND}</script>
+  <script>${THEME_BIND}${UPDATE_BIND}${LOGOUT_BIND}${RESTART_BIND}</script>
 </body>
 </html>`;
 }

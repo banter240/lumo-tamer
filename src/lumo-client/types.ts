@@ -148,6 +148,10 @@ export interface LumoClientOptions {
     onReasoning?: (content: string) => void;
     /** Bounce once when a completion looks like a truncated tool announcement. */
     coachAnnounceWithoutTool?: boolean;
+    /** Advertise native Proton tools (proton_info, web_search) to the request.
+     * Default true. Set false when custom tools handle transport (e.g. OpenCode)
+     * to avoid confusing the model with two competing tool worlds. */
+    useNativeTools?: boolean;
 }
 
 /** Result from a chat request. */

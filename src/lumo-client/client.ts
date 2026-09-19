@@ -35,7 +35,7 @@ import { buildChatCompletionsBody, LUMO_CHAT_ENDPOINT, type LumoCompletionTarget
 import { V2StreamProcessor } from './v2-stream.js';
 import { selectNativeTools } from './native-tools.js';
 import { getInstructionsConfig, getServerInstructionsConfig, getLogConfig, getConfigMode, getCustomToolsConfig, getEnableWebSearch, getServerConfig } from '../app/config.js';
-import { isAnnounceWithoutToolCall } from '../api/tools/announce.js';
+import { isAnnounceWithoutToolCall, isToolCallNarration, isBounceableBlankReply } from '../api/tools/announce.js';
 import { estimatePromptTokens } from '../app/token-estimate.js';
 import { injectInstructionsIntoTurns } from './instructions.js';
 import { NativeToolCallProcessor, type NativeToolCallResult } from '../api/tools/native-tool-call-processor.js';
@@ -344,6 +344,10 @@ export class LumoClient {
             coachAnnounceWithoutTool = this.defaultOptions?.coachAnnounceWithoutTool ?? false,
         } = options;
 
+        // Routing config: auto (default) defers to the caller's useNativeTools flag
+        // (routes pass !ctx.hasCustomTools), always/never force the behavior.
+        const routingMode = getServerConfig().customTools.routing.nativeTools;
+        const useNativeTools = routingMode === 'always' ? true : routingMode === 'never' ? false : (options.useNativeTools ?? true);
         const coachAnnounce = coachAnnounceWithoutTool && !isBounce;
         const bufferedChunks: string[] = [];
         const mainOnChunk = coachAnnounce
@@ -362,7 +366,7 @@ export class LumoClient {
 
         // Read from config - applies to both server and CLI modes
         const tools = selectNativeTools({
-            includeInternal: true,
+            includeInternal: useNativeTools,
             webSearch: getEnableWebSearch(),
         });
 
@@ -433,7 +437,7 @@ export class LumoClient {
             return { ...bounced, title };
         }
 
-        if (coachAnnounce && isAnnounceWithoutToolCall(main.content)) {
+        if (coachAnnounce && (isBounceableBlankReply(main.content) || isAnnounceWithoutToolCall(main.content) || isToolCallNarration(main.content))) {
             const bounceInstruction = buildAnnounceBounceInstruction();
             logger.info('Bouncing announce-without-tool narration');
             const bounceTurns: Turn[] = [

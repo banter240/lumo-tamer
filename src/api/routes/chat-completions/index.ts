@@ -213,6 +213,7 @@ async function handleChatRequest(
             ? (text) => emitter.emitReasoningDelta(text)
             : undefined,
           coachAnnounceWithoutTool: ctx.hasCustomTools,
+          useNativeTools: !ctx.hasCustomTools,
         })
       );
 

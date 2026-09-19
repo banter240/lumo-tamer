@@ -58,6 +58,16 @@ const replacePatternSchema = z.object({
 const customToolsConfigSchema = z.object({
   enabled: z.boolean(),
   prefix: z.string(),
+  recovery: z.object({
+    bounceDanglingColon: z.boolean(),
+    bounceNarration: z.boolean(),
+    bounceBlankReply: z.boolean(),
+    danglingColonMaxLength: z.number().int().positive(),
+    danglingColonLastLineMaxLength: z.number().int().positive(),
+  }),
+  routing: z.object({
+    nativeTools: z.enum(['auto', 'always', 'never']),
+  }),
 });
 
 // Metrics config

@@ -40,16 +40,17 @@ function renderConfigPage(isAuthenticated: boolean): string {
       display: none !important;
     }
     .layout {
-      display: grid; grid-template-columns: 13.5rem minmax(0, 1fr); gap: 1rem; align-items: start;
+      display: grid; grid-template-columns: 16rem minmax(0, 1fr); gap: 1rem; align-items: start;
       min-height: calc(100vh - 8rem);
     }
     .side {
       position: sticky; top: 1rem; display: flex; flex-direction: column; gap: 0.15rem;
       padding: 0.45rem; background: var(--card); border: 1px solid var(--line);
       border-radius: var(--radius); box-shadow: var(--shadow);
+      max-height: calc(100vh - 2rem); overflow-y: auto; overflow-x: hidden; scrollbar-width: thin;
     }
     .side .nav-item {
-      width: 100%; justify-content: space-between; gap: 0.5rem;
+      justify-content: space-between; gap: 0.5rem;
       border-radius: 10px; background: transparent; color: var(--text);
       font-weight: 500; font-size: 0.84rem; padding: 0.55rem 0.7rem; box-shadow: none;
     }
@@ -57,6 +58,12 @@ function renderConfigPage(isAuthenticated: boolean): string {
     .side .nav-item.active { background: var(--purple); color: #fff; }
     .side .nav-item.active:hover { background: var(--purple-hover); color: #fff; }
     .side .nav-item.dim { opacity: 0.4; }
+    .side .nav-item.sub { margin-left: 0.9rem; font-size: 0.8rem; padding: 0.4rem 0.7rem; }
+    .side .nav-item .caret { flex: 0 0 auto; width: 0.9rem; text-align: center; color: var(--muted); font-size: 0.7rem; }
+    .side .nav-item .caret:hover { color: var(--purple); }
+    .side .nav-label { flex: 1 1 auto; text-align: left; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .subgroup { margin-top: 1.25rem; }
+    .subgroup-title { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 0.5rem; }
     .side .count { color: inherit; opacity: 0.7; font-size: 0.72rem; font-weight: 600; }
     .pane-head h2 { font-size: 1.05rem; margin: 0 0 0.25rem; letter-spacing: -0.02em; }
     .pane-head .lede { margin: 0 0 1rem; }
@@ -260,7 +267,7 @@ function renderConfigPage(isAuthenticated: boolean): string {
     const dirty = new Map();
     const resets = new Set();
     let fields = [];
-    let active = localStorage.getItem('lumo-tamer-config-cat') || 'api';
+    let active = localStorage.getItem('lumo-tamer-config-cat') || 'auth';
 
     function showToast(message, type = 'ok') {
       const container = document.getElementById('toast-container');
@@ -543,21 +550,67 @@ function renderConfigPage(isAuthenticated: boolean): string {
       markAllRows();
     }
 
+    let navOpen = new Set(JSON.parse(localStorage.getItem('lumo-tamer-config-nav-open') || '[]'));
+    function saveNavOpen() {
+      try { localStorage.setItem('lumo-tamer-config-nav-open', JSON.stringify([...navOpen])); } catch (e) {}
+    }
+    const subsOf = (id) => CATEGORIES.filter((c) => c.parent === id);
+
     function renderNav() {
       const q = query();
-      navEl.innerHTML = CATEGORIES.map((cat) => {
-        const n = fields.filter((f) => f.category === cat.id && visible(f)).length;
-        const dim = q && n === 0 ? ' dim' : '';
-        const on = !q && cat.id === active ? ' active' : '';
-        return '<button type="button" class="nav-item' + on + dim + '" data-cat="' + cat.id + '">'
-          + escText(cat.title) + '<span class="count">' + n + '</span></button>';
-      }).join('');
+      // Parents never navigate: resolve a saved parent id down to its first leaf
+      const activeCat = CATEGORIES.find((c) => c.id === active);
+      if (activeCat && subsOf(activeCat.id).length) {
+        navOpen.add(activeCat.id);
+        saveNavOpen();
+        active = subsOf(activeCat.id)[0].id;
+      }
+      let html = '';
+      for (const cat of CATEGORIES) {
+        const subs = subsOf(cat.id);
+        if (cat.parent) {
+          const parentVisible = !!q || navOpen.has(cat.parent) || active === cat.parent;
+          if (!parentVisible) continue;
+        }
+        const own = fields.filter((f) => f.category === cat.id && visible(f)).length;
+        const n = subs.length
+          ? own + subs.reduce((s, c) => s + fields.filter((f) => f.category === c.id && visible(f)).length, 0)
+          : own;
+        if (q && n === 0) continue; // hide empty categories while searching
+        const activeParent = (CATEGORIES.find((c) => c.id === active) || {}).parent;
+        const on = !q && (cat.id === active || cat.id === activeParent) ? ' active' : '';
+        const sub = cat.parent ? ' sub' : '';
+        const caretOpen = !!q || navOpen.has(cat.id) || active === cat.id || active === cat.parent;
+        const caret = subs.length
+          ? '<span class="caret" data-toggle="' + cat.id + '" title="' + (caretOpen ? 'Collapse' : 'Expand') + '">' + (caretOpen ? '▾' : '▸') + '</span>'
+          : '';
+        html += '<button type="button" class="nav-item' + sub + on + '" data-cat="' + cat.id + '">'
+          + caret + '<span class="nav-label">' + escText(cat.title) + '</span><span class="count">' + n + '</span></button>';
+      }
+      navEl.innerHTML = html;
       navEl.querySelectorAll('[data-cat]').forEach((el) => {
         el.addEventListener('click', () => {
-          active = el.getAttribute('data-cat');
+          const catId = el.getAttribute('data-cat');
+          // Parent rows only expand/collapse — they never navigate
+          if (subsOf(catId).length) {
+            if (navOpen.has(catId)) navOpen.delete(catId); else navOpen.add(catId);
+            saveNavOpen();
+            renderNav();
+            return;
+          }
+          active = catId;
           localStorage.setItem('lumo-tamer-config-cat', active);
           filterEl.value = '';
           render();
+        });
+      });
+      navEl.querySelectorAll('[data-toggle]').forEach((el) => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const id = el.getAttribute('data-toggle');
+          if (navOpen.has(id)) navOpen.delete(id); else navOpen.add(id);
+          saveNavOpen();
+          renderNav();
         });
       });
     }
@@ -577,10 +630,18 @@ function renderConfigPage(isAuthenticated: boolean): string {
         statusEl.textContent = fields.filter(visible).length + ' matches';
       } else {
         const cat = CATEGORIES.find((c) => c.id === active) || CATEGORIES[0];
-        const list = fields.filter((f) => f.category === cat.id);
+        const subs = subsOf(cat.id);
+        const own = fields.filter((f) => f.category === cat.id);
+        const subLists = subs.map((s) => ({ cat: s, list: fields.filter((f) => f.category === s.id) }));
+        const total = own.length + subLists.reduce((n, s) => n + s.list.length, 0);
         paneHead.innerHTML = '<h2>' + escText(cat.title) + '</h2><p class="lede">' + escText(cat.blurb) + '</p>';
-        formEl.innerHTML = list.length ? renderFields(list) : '<p class="hint">Nothing in this category.</p>';
-        statusEl.textContent = list.length + ' settings';
+        let html = own.length ? renderFields(own) : '';
+        for (const s of subLists) {
+          if (!s.list.length) continue;
+          html += '<div class="subgroup"><h3 class="subgroup-title">' + escText(s.cat.title) + '</h3>' + renderFields(s.list) + '</div>';
+        }
+        formEl.innerHTML = html || '<p class="hint">Nothing in this category.</p>';
+        statusEl.textContent = total + ' settings';
       }
       renderNav();
       bindForm();

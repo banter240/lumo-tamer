@@ -58,7 +58,7 @@ describe('config page', () => {
     expect(res.headers.get('content-type')).toMatch(/html/);
     const html = await res.text();
     expect(html).toContain('leave blank to keep');
-    expect(html).toContain('Advanced');
+    expect(html).toContain('Prompts');
     expect(html).toContain('data-help');
     expect(html).toContain('extraBlock');
     expect(html).toContain('field.examples');
