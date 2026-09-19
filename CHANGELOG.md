@@ -1,3 +1,38 @@
+## [0.7.0-dev.12](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.11...v0.7.0-dev.12) (2026-09-19)
+
+### Features
+
+* feat(settings): sub-category config editor, reply-recovery fixes
+
+  Client fixes:
+  - stop thought-only replies and tool-call narration stalls: hide native
+    tools when custom tools handle transport, bounce narrated and blank
+    replies with a forAnnounceBounce reminder
+  - announce.ts reads bounce thresholds and routing flags from live config
+
+  Config editor rework:
+  - every category has sub-categories; parents show the aggregated view of
+    all children (parent click expands, sub click navigates)
+  - priority order for a normal user: setup (Sign-in, Server), daily use
+    (Models, Tools, Conversations, Commands, Prompts), maintenance
+    (Logging, Updates), niche (CLI), Expert last
+  - Expert gains real internals: Vault, Login Binary, Browser Extract,
+    Mock, Raw Templates, API Dump, Token Estimation, CLI Executors, Misc
+  - Tools: General / Routing / Reply Recovery; Models: Tiers / Reasoning;
+    Conversations: Storage / Proton Sync; Updates: General / Docker
+  - header restart button on /auth and /config
+
+  UI fixes:
+  - sidebar: width:100% on nav items clipped the active sub-item beyond
+    the box (drop it, flex stretches anyway); grid column widened to 16rem
+    with label ellipsis
+  - scrollbar-gutter: stable so banner and header stay pixel-aligned
+    between /config (scrollable) and /auth (short page)
+  - search hides empty categories; stored parent id resolves to first sub
+
+  Validation: npm run build clean; 605/606 tests green (only pre-existing
+  updates.test.ts failure remains).
+
 ## [0.7.0-dev.11](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.10...v0.7.0-dev.11) (2026-09-17)
 
 ### Bug Fixes
