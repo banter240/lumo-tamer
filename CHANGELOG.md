@@ -1,3 +1,18 @@
+## [0.7.0-dev.13](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.12...v0.7.0-dev.13) (2026-09-23)
+
+### Features
+
+* feat(models): auto-advertise -thinking variants via autoVariants
+
+  - Introduce 'autoVariants' reasoning config flag to advertise a pinned
+    -thinking variant of every allowedModels entry on /v1/models.
+  - Variants pin reasoning to high, ignoring a client reasoning_effort none
+    (e.g. OpenCode's per-model toggle). User-defined extraModels ids take
+    precedence and are not duplicated.
+  - Route effectiveExtras through /v1/models, request validation and tier
+    resolution.
+  - Remove obsolete scripts/dev-opencode.sh, update docs.
+
 ## [0.7.0-dev.12](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.11...v0.7.0-dev.12) (2026-09-19)
 
 ### Features
