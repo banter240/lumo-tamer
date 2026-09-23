@@ -7,7 +7,7 @@ import { logger } from '../app/logger.js';
 import { getConversationsConfig, getCustomToolsConfig, getReasoningConfig, getServerConfig, getServerInstructionsConfig } from '../app/config.js';
 import { deterministicUUID } from '../app/id-generator.js';
 import { getMetrics } from '../app/metrics.js';
-import { advertisedModelIds, isModelAllowed, isValidReasoningEffort, normalizeModelId, resolveModel, resolveReasoning } from '../lumo-client/model-tier.js';
+import { advertisedModelIds, effectiveExtras, isModelAllowed, isValidReasoningEffort, normalizeModelId, resolveModel, resolveReasoning } from '../lumo-client/model-tier.js';
 import type { LumoModelTier } from '../lumo-client/types.js';
 import { buildInstructions } from './instructions.js';
 import { parseToolChoice, toolChoiceInstruction, toolsForChoice } from './tools/tool-choice.js';
@@ -56,7 +56,10 @@ export function invalidModelOrEffort(
 ): InvalidField | null {
   if (model !== undefined && model !== null) {
     const cfg = getServerConfig();
-    const allowed = advertisedModelIds(cfg.allowedModels, cfg.extraModels);
+    const allowed = advertisedModelIds(
+      cfg.allowedModels,
+      effectiveExtras(cfg.allowedModels, cfg.extraModels, getReasoningConfig().autoVariants),
+    );
     if (typeof model !== 'string' || !isModelAllowed(normalizeModelId(model), allowed)) {
       return {
         message: `Unknown model '${String(model)}'. Allowed models: ${allowed.join(', ')}`,
@@ -82,14 +85,14 @@ export function resolveRequestTier(model: unknown, effort: unknown): {
   surfaceThinking: boolean;
 } {
   const serverConfig = getServerConfig();
+  const reasoningConfig = getReasoningConfig();
   const resolved = resolveModel(
     model,
     serverConfig.allowedModels,
-    serverConfig.extraModels,
+    effectiveExtras(serverConfig.allowedModels, serverConfig.extraModels, reasoningConfig.autoVariants),
     serverConfig.defaultModelTier,
   );
   const tier = resolved?.tier ?? serverConfig.defaultModelTier;
-  const reasoningConfig = getReasoningConfig();
   return {
     name: (typeof model === 'string' && model) ? model : serverConfig.apiModelName,
     tier,
@@ -98,6 +101,7 @@ export function resolveRequestTier(model: unknown, effort: unknown): {
       reasoningConfig.default === 'high',
       tier,
       resolved?.reasoning,
+      resolved?.pinned,
     ),
     surfaceThinking: reasoningConfig.surfaceThinking,
   };

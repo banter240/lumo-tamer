@@ -25,9 +25,9 @@ Hot reload uses `tsx watch`. Edit, save, done.
 
 To attach a debugger, open `chrome://inspect` in Chrome and add `localhost:9229`.
 
-## Local debug home
+## Isolated dev instance
 
-Keep Proxmox as production. Debug here so logs stay on disk.
+Tamer keeps user data (`config.yaml`, `sessions/`, logs) next to the install by default. For development, redirect all of it into a gitignored `.local/` directory so your dev checkout never touches a running instance:
 
 ```bash
 mkdir -p .local
@@ -50,19 +50,13 @@ curl -sS http://127.0.0.1:3003/v1/chat/completions \
   }'
 ```
 
-Expect `tool_calls` with `name: read`, not the string `Done read` in `content`. Tail `.local/lumo-tamer.log`.
+Expect `tool_calls` with `name: read`, not the string `Done read` in `content`. Watch `.local/lumo-tamer.log` while testing.
 
-Live Lumo: set `test.mock.enabled: false` in `.local/config.yaml`, then **you** open `http://127.0.0.1:3003/auth` in your browser. Do not paste email, password, or vault keys into chat. Agents must not read `.local/config.yaml`, `sessions/vault*`, or `/auth`. The logger redacts login fields (email, username, passwords, tokens, uid, cookies). Debug from `Tool call detected` / `Bouncing` lines (`messageContent` stays false).
+To test against the real Lumo backend, set `test.mock.enabled: false` in `.local/config.yaml`, restart the server, and log in once via `http://127.0.0.1:3003/auth` in a browser. Credentials and vault keys stay on your machine — do not paste them into chats or issues. The logger redacts login fields (email, username, passwords, tokens, uid, cookies); for debugging, look for `Tool call detected` / `Bouncing` lines (`messageContent` stays false).
 
-### OpenCode against local tamer
+### Using OpenCode as a client
 
-Production OpenCode (`~/.config/opencode`) still talks to Proxmox. For this box:
-
-```bash
-./scripts/dev-opencode.sh
-```
-
-Or in `ai-core/bin/start_ai.sh`: pick scratch **OpenCode → local lumo-tamer**, then OpenCode. That sets `OPENCODE_CONFIG=.local/opencode.json` (`http://127.0.0.1:3003/v1`, key `local-dev-key`) and starts the local server if needed.
+Any OpenAI-compatible client works against the dev server. For OpenCode specifically, point it at `http://127.0.0.1:3003/v1` with API key `local-dev-key` (see `docs/opencode.md`).
 
 ## Build
 

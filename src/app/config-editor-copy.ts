@@ -357,6 +357,11 @@ const COPY: Record<string, FieldCopy> = {
     more: 'none = compact / most Assist use). high = always think. lumo-max thinks even when this is none, unless the request sends reasoning_effort "none". OpenCode/Assist that should always think: set high.',
     choices: REASONING,
   },
+  'server.reasoning.autoVariants': {
+    label: 'Auto thinking variants',
+    hint: 'Advertise a `-thinking` variant of every allowed model on /v1/models.',
+    more: 'On: /v1/models additionally lists lumo-thinking, lumo-lite-thinking, lumo-max-thinking (one per allowedModels entry). Each variant pins thinking ON — it thinks even when a client explicitly sends reasoning_effort "none" (e.g. OpenCode). Ids you define yourself in extraModels take precedence and are not duplicated. Off: only your configured models are advertised.',
+  },
   'server.reasoning.surfaceThinking': {
     label: 'Forward thinking tokens',
     hint: 'Forward Lumo thinking tokens to the client (Deepseek-style reasoning_content).',

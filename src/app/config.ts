@@ -196,6 +196,7 @@ const serverMergedConfigSchema = z.object({
   reasoning: z.object({
     default: z.enum(['none', 'high']),
     surfaceThinking: z.boolean(),
+    autoVariants: z.boolean(),
   }),
 }).refine(
   (cfg) => isDefaultTierAllowed(cfg.defaultModelTier, cfg.allowedModels),

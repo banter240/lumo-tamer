@@ -43,12 +43,15 @@ export interface ExtraModel {
     id: string;
     model: string;
     reasoning?: 'none' | 'high';
+    /** Force the reasoning mode, ignoring an explicit client reasoning_effort. */
+    pinned?: boolean;
 }
 
 export interface ResolvedModel {
     id: string;
     tier: LumoModelTier;
     reasoning?: 'none' | 'high';
+    pinned?: boolean;
 }
 
 /** True if the normalized model is in the allowed list (also normalized). */
@@ -66,6 +69,32 @@ export function advertisedModelIds(allowedModels: string[], extras: ExtraModel[]
         }
     }
     return ids;
+}
+
+/**
+ * Auto-generate a `-thinking` variant for every allowed model. Each variant
+ * pins reasoning to high, so it thinks even when the client explicitly sends
+ * reasoning_effort "none" (e.g. OpenCode's per-model toggle). Ids already
+ * defined by user-configured extraModels are not duplicated.
+ */
+export function buildThinkingVariants(allowedModels: string[], userExtras: ExtraModel[] = []): ExtraModel[] {
+    const taken = new Set(userExtras.map((extra) => normalizeModelId(extra.id)));
+    const variants: ExtraModel[] = [];
+    for (const model of allowedModels) {
+        const base = normalizeModelId(model);
+        if (!base || taken.has(`${base}-thinking`)) continue;
+        variants.push({ id: `${base}-thinking`, model: base, reasoning: 'high', pinned: true });
+    }
+    return variants;
+}
+
+/** User extras plus the auto-generated thinking variants (when enabled). */
+export function effectiveExtras(
+    allowedModels: string[],
+    extras: ExtraModel[] = [],
+    autoVariants = true,
+): ExtraModel[] {
+    return autoVariants ? [...extras, ...buildThinkingVariants(allowedModels, extras)] : extras;
 }
 
 /**
@@ -91,6 +120,7 @@ export function resolveModel(
             id: extra.id,
             tier: modelToTier(normalizeModelId(extra.model)),
             reasoning: extra.reasoning,
+            pinned: extra.pinned,
         };
     }
     if (isModelAllowed(id, allowedModels)) {
@@ -106,15 +136,21 @@ export function isDefaultTierAllowed(defaultModelTier: string, allowedModels: st
 
 /**
  * Resolve the inbound reasoning_effort to a thinking-mode boolean.
- * Explicit effort wins. Else extraModels[].reasoning. Else global default.
- * Built-in lumo-max still thinks when nothing else is set (Proton Max).
+ * Pinned models (auto thinking variants, extraModels with pinned: true)
+ * force their mode, ignoring the client effort. Otherwise explicit effort
+ * wins. Else extraModels[].reasoning. Else global default. Built-in lumo-max
+ * still thinks when nothing else is set (Proton Max).
  */
 export function resolveReasoning(
     effort: string | null | undefined,
     defaultHigh: boolean,
     tier?: LumoModelTier,
     modelReasoning?: 'none' | 'high',
+    pinned?: boolean,
 ): boolean {
+    if (pinned && modelReasoning !== undefined) {
+        return modelReasoning === 'high';
+    }
     if (effort !== undefined && effort !== null) {
         return effort !== 'none';
     }

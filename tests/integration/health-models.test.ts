@@ -45,8 +45,13 @@ describe('GET /v1/models', () => {
     const res = await fetch(`${ts.baseUrl}/v1/models`);
     const body = await res.json();
     const ids = body.data.map((m: { id: string }) => m.id);
-    // Defaults from config.defaults.yaml
-    expect(ids).toEqual(['lumo', 'lumo-lite', 'lumo-max']);
+    // Built-ins from config.defaults.yaml come first (in order).
+    expect(ids.slice(0, 3)).toEqual(['lumo', 'lumo-lite', 'lumo-max']);
+    // Every allowed model gets a -thinking variant, either auto-generated
+    // (reasoning.autoVariants) or from local extraModels — order varies.
+    for (const id of ['lumo-thinking', 'lumo-lite-thinking', 'lumo-max-thinking']) {
+      expect(ids).toContain(id);
+    }
   });
 });
 

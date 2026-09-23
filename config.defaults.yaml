@@ -149,6 +149,11 @@ server:
     # Used when the client omits reasoning_effort. none = compact/fast.
     # high = think. lumo-max still thinks when effort is omitted.
     default: "none"
+    # Auto-advertise a `-thinking` variant for every allowedModels entry
+    # (e.g. lumo-max-thinking). Variants pin reasoning to high: they think
+    # even when the client explicitly sends reasoning_effort "none".
+    # Turn off if you want /v1/models to list only what you configured.
+    autoVariants: true
     # Forward Lumo's thinking tokens to the client as delta.reasoning_content
     # (streaming) or message.reasoning_content (non-streaming).
     surfaceThinking: false

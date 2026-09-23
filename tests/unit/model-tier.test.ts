@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeModelId, modelToTier, isModelAllowed, isDefaultTierAllowed, resolveReasoning, isValidReasoningEffort, resolveModel, advertisedModelIds } from '../../src/lumo-client/model-tier.js';
+import { normalizeModelId, modelToTier, isModelAllowed, isDefaultTierAllowed, resolveReasoning, isValidReasoningEffort, resolveModel, advertisedModelIds, buildThinkingVariants, effectiveExtras } from '../../src/lumo-client/model-tier.js';
 
 describe('normalizeModelId', () => {
     it('lowercases, trims, and strips a provider prefix', () => {
@@ -79,6 +79,50 @@ describe('resolveReasoning', () => {
     it('honors a per-model reasoning override when effort is omitted', () => {
         expect(resolveReasoning(undefined, false, 'lumo-lite', 'high')).toBe(true);
         expect(resolveReasoning(undefined, true, 'lumo-max', 'none')).toBe(false);
+    });
+    it('forces the pinned mode, ignoring an explicit client effort', () => {
+        expect(resolveReasoning('none', false, 'lumo-max', 'high', true)).toBe(true);
+        expect(resolveReasoning('high', true, 'lumo-max', 'none', true)).toBe(false);
+    });
+});
+
+describe('buildThinkingVariants / effectiveExtras', () => {
+    const allowed = ['lumo', 'lumo-lite', 'lumo-max'];
+
+    it('generates a pinned -thinking variant per allowed model', () => {
+        expect(buildThinkingVariants(allowed)).toEqual([
+            { id: 'lumo-thinking', model: 'lumo', reasoning: 'high', pinned: true },
+            { id: 'lumo-lite-thinking', model: 'lumo-lite', reasoning: 'high', pinned: true },
+            { id: 'lumo-max-thinking', model: 'lumo-max', reasoning: 'high', pinned: true },
+        ]);
+    });
+
+    it('does not duplicate ids already defined by user extras', () => {
+        const userExtras = [{ id: 'lumo-max-thinking', model: 'lumo-max', reasoning: 'high' as const }];
+        const variants = buildThinkingVariants(allowed, userExtras);
+        expect(variants.map((v) => v.id)).toEqual(['lumo-thinking', 'lumo-lite-thinking']);
+    });
+
+    it('effectiveExtras appends variants only when autoVariants is on', () => {
+        const userExtras = [{ id: 'my-alias', model: 'lumo-lite' }];
+        const on = effectiveExtras(allowed, userExtras, true);
+        expect(on.some((m) => m.id === 'lumo-max-thinking' && m.pinned)).toBe(true);
+        expect(on.some((m) => m.id === 'my-alias')).toBe(true);
+        const off = effectiveExtras(allowed, userExtras, false);
+        expect(off).toEqual(userExtras);
+    });
+
+    it('advertisedModelIds includes auto variants', () => {
+        const ids = advertisedModelIds(allowed, effectiveExtras(allowed, [], true));
+        expect(ids).toEqual([
+            'lumo', 'lumo-lite', 'lumo-max',
+            'lumo-thinking', 'lumo-lite-thinking', 'lumo-max-thinking',
+        ]);
+    });
+
+    it('resolves an auto variant to its tier with a high pin', () => {
+        const resolved = resolveModel('lumo-max-thinking', allowed, effectiveExtras(allowed, [], true), 'auto');
+        expect(resolved).toEqual({ id: 'lumo-max-thinking', tier: 'lumo-max', reasoning: 'high', pinned: true });
     });
 });
 

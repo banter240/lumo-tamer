@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { getServerConfig } from '../../app/config.js';
-import { advertisedModelIds } from '../../lumo-client/model-tier.js';
+import { getReasoningConfig, getServerConfig } from '../../app/config.js';
+import { advertisedModelIds, effectiveExtras } from '../../lumo-client/model-tier.js';
 
 const MODEL_CREATED = 1700000000;
 
@@ -18,7 +18,10 @@ function modelCard(id: string) {
 export function createModelsRouter(): Router {
   const router = Router();
   const serverConfig = getServerConfig();
-  const advertised = advertisedModelIds(serverConfig.allowedModels, serverConfig.extraModels);
+  const advertised = advertisedModelIds(
+    serverConfig.allowedModels,
+    effectiveExtras(serverConfig.allowedModels, serverConfig.extraModels, getReasoningConfig().autoVariants),
+  );
 
   router.get('/v1/models', (_req: Request, res: Response) => {
     res.json({

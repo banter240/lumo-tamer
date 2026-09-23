@@ -7,13 +7,13 @@ No extra updater container. Tamer checks GitHub itself and, on Apply, talks to t
 | What | Where | Why |
 |------|--------|-----|
 | Channel, GitHub repo, interval, auto-apply, socket path | `config.yaml` → Settings → **Updates** | Tamer reads this at runtime. |
-| Which image this box runs | **`.env` → `LUMO_TAMER_IMAGE`** | Compose `image:` is set before the container exists. Settings cannot rewrite `.env`. |
+| Which image the deployment runs | **`.env` → `LUMO_TAMER_IMAGE`** | Compose `image:` is set before the container exists. Settings cannot rewrite `.env`. |
 
 Nothing else moved to env. API key, auth, models stay in `config.yaml`. There is **no Watchtower token**.
 
 ## Docker socket
 
-`docker-compose.yml` mounts `/var/run/docker.sock` on `tamer`. That is root-equivalent on the host — only on a private LAN box.
+`docker-compose.yml` mounts `/var/run/docker.sock` on `tamer`. That is root-equivalent on the host — restrict access to trusted networks only.
 
 Portainer: add the same bind on the `lumo-tamer` container if you did not deploy from this compose file.
 

@@ -457,7 +457,7 @@ The box runs the GHCR tag in `.env` (`LUMO_TAMER_IMAGE`), not the git branch. De
 Self-update is optional and uses **this** container plus the Docker socket (no extra updater). Full split: [Updates](docs/updates.md).
 
 ```bash
-# .env — which GHCR tag this box runs (stable/main → :latest, dev → :dev)
+# .env — which GHCR image tag to run (stable/main → :latest, dev → :dev)
 # LUMO_TAMER_IMAGE=ghcr.io/banter240/lumo-tamer:latest
 ```
 
