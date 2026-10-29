@@ -26,6 +26,13 @@ describe('invalidModelOrEffort', () => {
     expect(err?.code).toBe('invalid_reasoning_effort');
     expect(err?.param).toBe('reasoning.effort');
   });
+
+  it('accepts apertus ids', () => {
+    expect(invalidModelOrEffort('apertus-15', undefined, 'reasoning_effort')).toBeNull();
+    expect(invalidModelOrEffort('apertus', undefined, 'reasoning_effort')).toBeNull();
+    expect(invalidModelOrEffort('apertus-1.5', undefined, 'reasoning_effort')).toBeNull();
+    expect(invalidModelOrEffort('apertus-15-thinking', undefined, 'reasoning_effort')).toBeNull();
+  });
 });
 
 describe('resolveRequestTier', () => {

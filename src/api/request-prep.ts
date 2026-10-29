@@ -7,7 +7,7 @@ import { logger } from '../app/logger.js';
 import { getConversationsConfig, getCustomToolsConfig, getReasoningConfig, getServerConfig, getServerInstructionsConfig } from '../app/config.js';
 import { deterministicUUID } from '../app/id-generator.js';
 import { getMetrics } from '../app/metrics.js';
-import { advertisedModelIds, effectiveExtras, isModelAllowed, isValidReasoningEffort, normalizeModelId, resolveModel, resolveReasoning } from '../lumo-client/model-tier.js';
+import { advertisedModelIds, canonicalModelId, effectiveExtras, isModelAllowed, isValidReasoningEffort, normalizeModelId, resolveModel, resolveReasoning } from '../lumo-client/model-tier.js';
 import type { LumoModelTier } from '../lumo-client/types.js';
 import { buildInstructions } from './instructions.js';
 import { parseToolChoice, toolChoiceInstruction, toolsForChoice } from './tools/tool-choice.js';
@@ -56,11 +56,14 @@ export function invalidModelOrEffort(
 ): InvalidField | null {
   if (model !== undefined && model !== null) {
     const cfg = getServerConfig();
-    const allowed = advertisedModelIds(
-      cfg.allowedModels,
-      effectiveExtras(cfg.allowedModels, cfg.extraModels, getReasoningConfig().autoVariants),
+    const extras = effectiveExtras(cfg.allowedModels, cfg.extraModels, getReasoningConfig().autoVariants);
+    const allowed = advertisedModelIds(cfg.allowedModels, extras);
+    const normalized = typeof model === 'string' ? normalizeModelId(model) : '';
+    const canonical = canonicalModelId(normalized);
+    const listed = typeof model === 'string' && (
+      isModelAllowed(normalized, allowed) || isModelAllowed(canonical, allowed)
     );
-    if (typeof model !== 'string' || !isModelAllowed(normalizeModelId(model), allowed)) {
+    if (!listed) {
       return {
         message: `Unknown model '${String(model)}'. Allowed models: ${allowed.join(', ')}`,
         param: 'model',

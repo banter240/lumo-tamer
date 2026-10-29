@@ -186,11 +186,11 @@ const serverMergedConfigSchema = z.object({
   port: z.number().int().positive(),
   apiKey: z.string().min(1, 'server.apiKey is required'),
   apiModelName: z.string().min(1),
-  defaultModelTier: z.enum(['auto', 'lumo-lite', 'lumo-max']),
+  defaultModelTier: z.enum(['auto', 'lumo-lite', 'lumo-max', 'apertus-15']),
   allowedModels: z.array(z.string().min(1)).min(1),
   extraModels: z.array(z.object({
     id: z.string().min(1),
-    model: z.enum(['lumo', 'lumo-lite', 'lumo-max', 'auto']),
+    model: z.enum(['lumo', 'lumo-lite', 'lumo-max', 'apertus-15', 'auto']),
     reasoning: z.enum(['none', 'high']).optional(),
   })),
   reasoning: z.object({

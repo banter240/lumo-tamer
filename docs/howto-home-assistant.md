@@ -370,7 +370,7 @@ Lumo taking a few seconds to answer is to be expected. If you encounter larger r
 
 ### Home Assistant reports an unknown model / HTTP 400
 
-The conversation agent model must be `lumo`, `lumo-lite`, or `lumo-max`. Stock OpenAI names are rejected.
+The conversation agent model must be `lumo`, `lumo-lite`, `lumo-max`, or `apertus-15`. Stock OpenAI names are rejected.
 
 ### Device control not working or Lumo saying "I can't do that"
 

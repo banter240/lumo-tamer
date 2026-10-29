@@ -121,9 +121,10 @@ server:
 
   # Model tier selection (Lumo 2.0).
   # The inbound OpenAI "model" field picks the tier:
-  #   lumo      -> Proton routes automatically
-  #   lumo-lite -> Lumo 2.0 Lite (fast, everyday)
-  #   lumo-max  -> Lumo 2.0 Max (high-performance)
+  #   lumo       -> Proton routes automatically
+  #   lumo-lite  -> Lumo 2.0 Lite (fast, everyday)
+  #   lumo-max   -> Lumo 2.0 Max (high-performance)
+  #   apertus-15 -> Apertus 1.5
   # Tier used when a request omits the model field (auto = lumo / Proton routes):
   defaultModelTier: "auto"
   # Models advertised on /v1/models and accepted in the "model" field.
@@ -132,6 +133,7 @@ server:
     - "lumo"
     - "lumo-lite"
     - "lumo-max"
+    - "apertus-15"
 
   # Extra names advertised on /v1/models. Each one maps to a real Lumo tier
   # and optional thinking. Request reasoning_effort still wins when set.
@@ -354,6 +356,7 @@ cli:
     filePath: "lumo-tamer-cli.log"
 
   enableWebSearch: false
+
   localActions:
     # Enable code block detection (```bash, ```read, ```edit, etc.)
     # WARNING: When enabled, Lumo can trigger actions on your machine!

@@ -89,7 +89,7 @@ const MOCK_SCENARIOS = [
   'success', 'error', 'timeout', 'rejected', 'toolCall',
   'misroutedToolCall', 'historyToolEcho', 'weeklyLimit', 'cycle',
 ];
-const MODEL_TIERS = ['auto', 'lumo-lite', 'lumo-max'];
+const MODEL_TIERS = ['auto', 'lumo-lite', 'lumo-max', 'apertus-15'];
 const REASONING = ['none', 'high'];
 
 function sample(value: string, label = 'Example'): ConfigExample[] {
@@ -326,7 +326,7 @@ const COPY: Record<string, FieldCopy> = {
   },
   'server.defaultModelTier': {
     label: 'Default model tier',
-    hint: 'Real Lumo tier when the client omits model: auto (Proton picks), lumo-lite, or lumo-max.',
+    hint: 'Real Lumo tier when the client omits model: auto (Proton picks), lumo-lite, lumo-max, or apertus-15.',
     more: 'Used only when the request has no model (or an empty one). auto is the Proton website behaviour. Must be auto, or a name that is also in allowedModels.',
     choices: MODEL_TIERS,
   },
@@ -334,12 +334,12 @@ const COPY: Record<string, FieldCopy> = {
     label: 'Allowed model names',
     hint: 'Built-in names this proxy accepts in the model field. Unknown names return 400.',
     more: 'Comma-separated, not JSON. These are Proton ids only. Your own aliases belong in Extra model names, not here. Removing lumo-max hides it from /v1/models and rejects it with 400.',
-    examples: sample('lumo, lumo-lite, lumo-max'),
+    examples: sample('lumo, lumo-lite, lumo-max, apertus-15'),
   },
   'server.extraModels': {
     label: 'Extra model names',
     hint: 'Your own names on /v1/models. Each maps an id to a real Lumo tier and optional thinking.',
-    more: 'JSON array of objects, not YAML and not comma-separated names. Paste over [] — several aliases go in the same array, comma-separated objects. id is what clients send as model. model is the real Proton tier: lumo, lumo-lite, lumo-max, or auto. reasoning is optional (none or high) and applies only when the request omits reasoning_effort; an explicit reasoning_effort still wins. The example below is all four lite/max × none/high combos; delete the rows you do not want. lumo-max and thinking depend on the Proton plan.',
+    more: 'JSON array of objects, not YAML and not comma-separated names. Paste over [] — several aliases go in the same array, comma-separated objects. id is what clients send as model. model is the real Proton tier: lumo, lumo-lite, lumo-max, apertus-15, or auto. reasoning is optional (none or high) and applies only when the request omits reasoning_effort; an explicit reasoning_effort still wins. The example below is all four lite/max × none/high combos; delete the rows you do not want. lumo-max and thinking depend on the Proton plan.',
     kind: 'json',
     examples: [{
       label: 'Example — four aliases in one array (delete what you do not need)',
@@ -360,7 +360,7 @@ const COPY: Record<string, FieldCopy> = {
   'server.reasoning.autoVariants': {
     label: 'Auto thinking variants',
     hint: 'Advertise a `-thinking` variant of every allowed model on /v1/models.',
-    more: 'On: /v1/models additionally lists lumo-thinking, lumo-lite-thinking, lumo-max-thinking (one per allowedModels entry). Each variant pins thinking ON — it thinks even when a client explicitly sends reasoning_effort "none" (e.g. OpenCode). Ids you define yourself in extraModels take precedence and are not duplicated. Off: only your configured models are advertised.',
+    more: 'On: /v1/models additionally lists lumo-thinking, lumo-lite-thinking, lumo-max-thinking, apertus-15-thinking (one per allowedModels entry). Each variant pins thinking ON — it thinks even when a client explicitly sends reasoning_effort "none" (e.g. OpenCode). Ids you define yourself in extraModels take precedence and are not duplicated. Off: only your configured models are advertised.',
   },
   'server.reasoning.surfaceThinking': {
     label: 'Forward thinking tokens',

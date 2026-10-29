@@ -32,6 +32,9 @@ describe('modelToTier', () => {
         expect(modelToTier('lumo')).toBe('auto');
         expect(modelToTier('lumo-lite')).toBe('lumo-lite');
         expect(modelToTier('lumo-max')).toBe('lumo-max');
+        expect(modelToTier('apertus-15')).toBe('apertus-15');
+        expect(modelToTier('apertus')).toBe('apertus-15');
+        expect(modelToTier('apertus-1.5')).toBe('apertus-15');
         expect(modelToTier('something-else')).toBe('auto');
     });
 });
@@ -71,6 +74,9 @@ describe('resolveReasoning', () => {
         expect(resolveReasoning(undefined, false, 'lumo-max')).toBe(true);
         expect(resolveReasoning(null, false, 'lumo-max')).toBe(true);
         expect(resolveReasoning(undefined, false, 'lumo-lite')).toBe(false);
+        expect(resolveReasoning(undefined, false, 'apertus-15')).toBe(false);
+        expect(resolveReasoning('high', false, 'apertus-15')).toBe(true);
+        expect(resolveReasoning('none', false, 'apertus-15')).toBe(false);
         expect(resolveReasoning(undefined, false, 'auto')).toBe(false);
     });
     it('still honors an explicit none on lumo-max', () => {
@@ -146,5 +152,20 @@ describe('resolveModel / advertisedModelIds', () => {
 
     it('rejects unknown names', () => {
         expect(resolveModel('gpt-4', allowed, extras, 'auto')).toBeNull();
+    });
+});
+
+describe('apertus-15', () => {
+    const allowed = ['lumo', 'lumo-lite', 'lumo-max', 'apertus-15'];
+    const extras = effectiveExtras(allowed, [], true);
+
+    it('maps aliases and the thinking variant', () => {
+        expect(resolveModel('apertus-15', allowed, extras, 'auto')).toEqual({ id: 'apertus-15', tier: 'apertus-15' });
+        expect(resolveModel('apertus', allowed, extras, 'auto')).toEqual({ id: 'apertus-15', tier: 'apertus-15' });
+        expect(resolveModel('Apertus-1.5', allowed, extras, 'auto')).toEqual({ id: 'apertus-15', tier: 'apertus-15' });
+        expect(resolveModel('apertus-15-thinking', allowed, extras, 'auto')).toEqual({
+            id: 'apertus-15-thinking', tier: 'apertus-15', reasoning: 'high', pinned: true,
+        });
+        expect(resolveModel('apertus-thinking', allowed, extras, 'auto')?.id).toBe('apertus-15-thinking');
     });
 });

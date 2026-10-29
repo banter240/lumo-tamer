@@ -27,13 +27,30 @@ export function isValidReasoningEffort(effort: unknown): boolean {
         || (typeof effort === 'string' && (VALID_REASONING_EFFORTS as readonly string[]).includes(effort));
 }
 
+export function canonicalModelId(normalized: string): string {
+    switch (normalized) {
+        case 'apertus':
+        case 'apertus-1.5':
+        case 'apertus-1-5':
+            return 'apertus-15';
+        case 'apertus-thinking':
+        case 'apertus-1.5-thinking':
+        case 'apertus-1-5-thinking':
+            return 'apertus-15-thinking';
+        default:
+            return normalized;
+    }
+}
+
 /** Map a normalized model id to a tier. `lumo`/`auto`/unknown-ish -> 'auto'. */
 export function modelToTier(normalizedModel: string): LumoModelTier {
-    switch (normalizedModel) {
+    switch (canonicalModelId(normalizedModel)) {
         case 'lumo-lite':
             return 'lumo-lite';
         case 'lumo-max':
             return 'lumo-max';
+        case 'apertus-15':
+            return 'apertus-15';
         default:
             return 'auto';
     }
@@ -113,8 +130,10 @@ export function resolveModel(
     if (typeof rawModel !== 'string') {
         return null;
     }
-    const id = normalizeModelId(rawModel);
-    const extra = extras.find((item) => normalizeModelId(item.id) === id);
+    const normalized = normalizeModelId(rawModel);
+    const id = canonicalModelId(normalized);
+    const extra = extras.find((item) => normalizeModelId(item.id) === normalized)
+        ?? extras.find((item) => normalizeModelId(item.id) === id);
     if (extra) {
         return {
             id: extra.id,

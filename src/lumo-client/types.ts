@@ -112,7 +112,7 @@ export interface AssistantMessageData {
 // LumoClient types
 
 /** OpenAI-style model id selecting the Lumo tier. */
-export type LumoModelTier = 'auto' | 'lumo-lite' | 'lumo-max';
+export type LumoModelTier = 'auto' | 'lumo-lite' | 'lumo-max' | 'apertus-15';
 
 /**
  * Usage/limit info from the chat/completions `usage` SSE chunk.

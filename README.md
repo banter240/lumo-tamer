@@ -239,17 +239,17 @@ cli:
 
 lumo-tamer maps standard OpenAI request fields to Lumo 2.0's model tier and answer mode:
 
-- `model`: `lumo` (Proton auto-routes), `lumo-lite`, or `lumo-max`. These are advertised on `/v1/models`; an unknown model returns HTTP 400.
+- `model`: `lumo` (Proton auto-routes), `lumo-lite`, `lumo-max`, or `apertus-15`. `apertus` and `apertus-1.5` map to `apertus-15`. These are advertised on `/v1/models`; an unknown model returns HTTP 400.
 - `reasoning_effort`: `high` (also `low`/`medium`) turns on thinking mode, `none` turns it off. In the Responses API, use `reasoning.effort` instead.
 
 Defaults and surfacing are configurable:
 
 ```yaml
 server:
-  # Tier used when a request omits the model field: auto, lumo-lite, lumo-max
+  # Tier used when a request omits the model field: auto, lumo-lite, lumo-max, apertus-15
   defaultModelTier: "auto"
   # Models advertised on /v1/models and accepted in the model field
-  allowedModels: ["lumo", "lumo-lite", "lumo-max"]
+  allowedModels: ["lumo", "lumo-lite", "lumo-max", "apertus-15"]
   reasoning:
     # Used when a request omits reasoning_effort: "none" or "high".
     # Default none = compact/fast. lumo-max still thinks when effort is omitted.
@@ -367,7 +367,7 @@ The server implements a subset of OpenAI-compatible endpoints and has so far bee
 |----------|-------------|
 | `POST /v1/chat/completions` | [OpenAI chat completions](https://platform.openai.com/docs/api-reference/chat/create) (`response_format` json_schema / json_object is emulated) |
 | `POST /v1/responses` | [OpenAI responses API](https://platform.openai.com/docs/api-reference/responses/create) |
-| `GET /v1/models` | List available models (`lumo`, `lumo-lite`, `lumo-max`) |
+| `GET /v1/models` | List available models (`lumo`, `lumo-lite`, `lumo-max`, `apertus-15`) |
 | `GET /v1/models/:id` | Single model |
 | `GET /health` | Health check (`status`, version, queue, auth, update) |
 | `GET /v1/update` | GitHub update check (`?refresh=1` to bypass cache) |

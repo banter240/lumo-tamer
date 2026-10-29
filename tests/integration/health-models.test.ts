@@ -46,10 +46,10 @@ describe('GET /v1/models', () => {
     const body = await res.json();
     const ids = body.data.map((m: { id: string }) => m.id);
     // Built-ins from config.defaults.yaml come first (in order).
-    expect(ids.slice(0, 3)).toEqual(['lumo', 'lumo-lite', 'lumo-max']);
+    expect(ids.slice(0, 4)).toEqual(['lumo', 'lumo-lite', 'lumo-max', 'apertus-15']);
     // Every allowed model gets a -thinking variant, either auto-generated
     // (reasoning.autoVariants) or from local extraModels — order varies.
-    for (const id of ['lumo-thinking', 'lumo-lite-thinking', 'lumo-max-thinking']) {
+    for (const id of ['lumo-thinking', 'lumo-lite-thinking', 'lumo-max-thinking', 'apertus-15-thinking']) {
       expect(ids).toContain(id);
     }
   });
