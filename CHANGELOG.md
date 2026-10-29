@@ -1,3 +1,453 @@
+## [0.7.0-dev.1](https://github.com/banter240/lumo-tamer/compare/v0.6.0...v0.7.0-dev.1) (2026-10-29)
+
+### Features
+
+* feat(api): flatten client tools, extraModels aliases, and image tools
+
+  OpenAI-style tools[] from OpenCode, Home Assistant, and similar clients
+  must not reach Proton as native tool definitions. Flatten every client
+  tool into the prompt, detect JSON tool calls in the stream, and keep
+  schemas compact so context stays small. Operators can advertise extra
+  model names, and optional Lumo image tools stay off unless enabled.
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  CLIENT TOOLS
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Proton rejects or misroutes custom tool protocols. Clients such as
+  OpenCode send large tools[] payloads; those have to become text.
+
+  - Flatten all client tools before the Lumo 2.0 request
+  - StreamingToolDetector: LINE_START plus inline {"name":
+  - forTools and forToolsCompact with {{prefix}} substitution
+  - Honor tool_choice none / auto / required
+  - Force injectInto last when the client sent tools
+  - Prefix user: so Lumo does not treat client names as native tools
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  EXTRAMODELS
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  /v1/models can list extra names the operator chooses. Each alias maps
+  to a real Lumo tier and an optional thinking override. A request that
+  sets reasoning_effort still wins.
+
+  - extraModels: {id, model, reasoning?}
+  - resolveReasoning: request > alias > global default
+  - lumo-max still thinks when nothing sets effort
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  IMAGE TOOLS
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Optional generate / edit / describe. Off by default so replies do not
+  turn into huge data URLs when you asked Lumo to toggle a light.
+
+  - enableImageTools plus images.maxInputBytes
+  - Return generated images as data URLs
+* feat(app): /config editor, LUMO_HOME, and safer proxy defaults
+
+  A browser form writes config.yaml and restarts. Data lives under
+  LUMO_HOME or --home. Defaults match a proxy: search, images, and
+  sync off; custom tools on; reasoning none; fallback store on.
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  CONFIG EDITOR
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - GET /config plus GET/PUT /v1/config
+  - Category nav (Server, Models, Tools, …); Advanced is prompt text
+  - Human labels, short copy, YAML key, More/Example when needed
+  - Default on the right (not on the API key); Undo after edits
+  - Dark/light theme shared with /auth
+  - server.apiKey is write-only and never returned
+  - After save, poll /health then reload the page
+  - Reset to defaults keeps server.apiKey; confirm, then restart like Save
+  - After save, Docker exits; local tsx watch is poked so it restarts
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PATHS AND PRIVACY
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - LUMO_HOME / --home for vault, logs, and browser profile
+  - /private for conversation dumps (not /health)
+  - deriveIdFromUser and fallback store stay the Home Assistant path
+  - Broken vault at startup is skipped so /auth can mint a new one
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  DEFAULTS
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - auth.method browser, bodyLimit 1mb, extraModels []
+  - enableWebSearch / enableImageTools / enableSync false
+  - customTools.enabled true, reasoning.default none
+* feat(auth): Lumo-scoped login page and password flow
+
+  Add a /auth WebUI and make password login request Lumo scope first,
+  then fall back to Drive plus CAPTCHA when Proton challenges the
+  client. Tokens stay in the AES-256-GCM vault and refresh without
+  dropping the session. Proton 2028 (abuse lock) cannot retry SRP;
+  on a desktop a Chrome window opens instead.
+
+  - GET /auth plus POST /auth/login, logout, refresh, and status
+  - Proton-like login card; dark/light theme shared with /config
+  - Shared header: GitHub, theme, Settings/Account swap; same brand on both pages
+  - Login-fail details (CAPTCHA, 2028 desktop, Docker sidecar)
+  - Proton Pass OTP field (autocomplete=one-time-code)
+  - Signed-in status: Lumo API Ready plus lumo.proton.me On/Off/Unavailable
+  - Log out without killing the server
+  - Missing vault key file is created so /auth can start
+  - Go SRP helper: try web-lumo before the Drive client
+  - Resolve the helper as .exe on Windows
+  - Skip title generation unless conversation sync is initialized
+  - Surface whether the session can sync
+  - Optional dumpApiPath traces Proton calls without auth headers
+* feat(auth): Proton desktop sign-in, collapse login paths, bounce dead tool calls
+
+  /auth is the one login. Proton desktop sign-in works on any device (phone
+  included). Password is optional underneath. Chat API works; Proton thread
+  history still needs tamer auth browser. OpenCode stays on lumo-max and can
+  hand isolated jobs to task.
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PROTON DESKTOP SIGN-IN
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - /auth primary action is Start Proton sign-in. Tamer calls Proton's
+    desktop login (account.proton.me/desktop/login), shows Open / Copy,
+    and polls until the session lands.
+  - Password form is folded under Email and password instead. 2028 no
+    longer tries to launch Chrome; it starts the same Proton sign-in.
+  - tamer auth with no args opens /auth via the OS opener (xdg-open /
+    open / start). login / browser / rclone remain CLI fallbacks only.
+  - Default auth.method is login. browser.launch defaults to false
+    (sidecar CDP). Desktop chat history still uses launch: true.
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ONE LOGIN, NOT FOUR
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - Interactive 1/2/3 method prompt is gone.
+  - /auth fail list is Proton sign-in, password, sidecar last resort.
+  - README and docs/authentication.md state /auth does not sync
+    lumo.proton.me threads, and how tamer auth browser does (desktop
+    window vs Docker sidecar on :3001).
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  DEAD TOOL CALLS
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - Bounce a short reply that starts a tool action and dies on a
+    dangling colon, with no tool-call JSON (one bounce per turn).
+  - Salvage a complete tool object when the closing fence is missing.
+  - Match client tools[] case-insensitively (Task vs user:task).
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  OPENCODE WORKERS
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - build/plan stay lumo-max. Isolated jobs can use task: lite
+    (lumo-lite), explore, or general. Task to self (build/plan) denied.
+  - Worker protocol: prefer task for isolated work; pick the subagent
+    from the tool schema.
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  CONFIG UI
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - Save no longer fires the Updates up-to-date toast (only the update
+    chip, or a save that changes updates.channel).
+  - Token-factor copy no longer mentions the old 1.45 /4 scale.
+* feat(models): add Apertus 1.5
+
+  Wire id is apertus-15. apertus and apertus-1.5 select the same tier.
+* feat(models): auto-advertise -thinking variants via autoVariants
+
+  - Introduce 'autoVariants' reasoning config flag to advertise a pinned
+    -thinking variant of every allowedModels entry on /v1/models.
+  - Variants pin reasoning to high, ignoring a client reasoning_effort none
+    (e.g. OpenCode's per-model toggle). User-defined extraModels ids take
+    precedence and are not duplicated.
+  - Route effectiveExtras through /v1/models, request validation and tier
+    resolution.
+  - Remove obsolete scripts/dev-opencode.sh, update docs.
+* feat(settings): sub-category config editor, reply-recovery fixes
+
+  Client fixes:
+  - stop thought-only replies and tool-call narration stalls: hide native
+    tools when custom tools handle transport, bounce narrated and blank
+    replies with a forAnnounceBounce reminder
+  - announce.ts reads bounce thresholds and routing flags from live config
+
+  Config editor rework:
+  - every category has sub-categories; parents show the aggregated view of
+    all children (parent click expands, sub click navigates)
+  - priority order for a normal user: setup (Sign-in, Server), daily use
+    (Models, Tools, Conversations, Commands, Prompts), maintenance
+    (Logging, Updates), niche (CLI), Expert last
+  - Expert gains real internals: Vault, Login Binary, Browser Extract,
+    Mock, Raw Templates, API Dump, Token Estimation, CLI Executors, Misc
+  - Tools: General / Routing / Reply Recovery; Models: Tiers / Reasoning;
+    Conversations: Storage / Proton Sync; Updates: General / Docker
+  - header restart button on /auth and /config
+
+  UI fixes:
+  - sidebar: width:100% on nav items clipped the active sub-item beyond
+    the box (drop it, flex stretches anyway); grid column widened to 16rem
+    with label ellipsis
+  - scrollbar-gutter: stable so banner and header stay pixel-aligned
+    between /config (scrollable) and /auth (short page)
+  - search hides empty categories; stored parent id resolves to first sub
+
+  Validation: npm run build clean; 605/606 tests green (only pre-existing
+  updates.test.ts failure remains).
+* feat: sidecar login, docker.sock self-update, and token-estimate SSOT
+
+  Drop Watchtower. The tamer container checks GitHub Releases and, with
+  docker.sock mounted, pulls GHCR and recreates itself via a one-shot
+  helper. Stable tracks main (:latest); Settings save hot-reloads the
+  update config.
+
+  Docker password login that hits Proton 2028 no longer launches Chrome
+  inside the image. Persist launch:false and CDP http://browser:9222,
+  then remove only the sidecar. Permanent refresh failures clear the
+  vault so /auth asks for a re-login.
+
+  Bake the 1.45 Lumo calibration into auto prompt-token estimates so
+  factor 1.0 is that baseline. Centralize app tunables in src/app/const.ts.
+* feat(usage): estimate prompt_tokens from request body
+
+  Proton does not report prompt/input token counts, only completion
+  tokens. This caused OpenCode's auto-compact to never trigger —
+  it saw prompt_tokens: 0 and thought the context was empty.
+
+  Estimate prompt_tokens from the serialized request body size
+  (~4 chars/token). Not exact, but sufficient for compaction
+  decisions. Also fix total_tokens to include both prompt and
+  completion instead of completion only.
+
+  Changes:
+  - LumoUsage: add prompt_tokens field
+  - client.ts: estimate after buildChatCompletionsBody(), attach to usage
+  - shared.ts: use estimated prompt_tokens instead of hardcoded 0
+  - request-handlers.ts: estimate input_tokens from request.input for
+    Responses API
+  - Tests updated to expect prompt_tokens in usage
+* feat(web-ui): split save and restart, add server-down banner, fix number inputs
+
+  Overhaul the /config page so saving config no longer forces a server
+  restart. A dedicated /v1/restart endpoint handles voluntary restarts.
+  Number fields switched from type=number to text+inputmode to dodge
+  browser locale commas.
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SAVE AND RESTART SEPARATED
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - PUT /v1/config no longer calls hooks.onSaved(); it writes the YAML
+    and returns immediately. The UI reloads the form without a restart.
+  - New POST /v1/restart endpoint exits the process so Docker/tsx-watch
+    can bring it back up. Added to isOpenUiPath and setupReadyMiddleware
+    so it bypasses API-key and auth-readiness checks.
+  - Toolbar has three buttons now: Reset to defaults (UI-only, no save),
+    Save (enabled only when dirty), Restart (always enabled, secondary).
+  - Save clears dirty/resets, reloads fields, shows 'Saved.' status.
+  - Restart confirms, posts /v1/restart, polls /health, reloads page.
+  - Reset to defaults sets all visible fields to their defaultValue in
+    the UI only. No server call. Refresh the page to undo.
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SERVER-DOWN BANNER
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - New red banner element shown when /health is unreachable or non-ok.
+  - Auth banner hidden when server is down instead of falsely showing
+    'Not logged in'.
+  - Polling logic distinguishes: 200+auth.valid -> green, 200+no auth ->
+    auth banner, non-ok or network error -> server-down banner.
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  NUMBER INPUT FIXES
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - Switched from type=number (spinner arrows, locale comma) to type=text
+    with inputmode=decimal for all numeric config fields.
+  - parseCurrent replaces commas with dots before Number() conversion.
+  - onEdit also sanitises commas on every keystroke.
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  CSS AND UX POLISH
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - background-attachment: fixed on body prevents glow gradient jump
+    when switching between config categories of different heights.
+  - cursor: not-allowed replaces cursor: wait on disabled buttons.
+  - Duplicate button.secondary CSS rules cleaned up.
+  - Config category persisted to localStorage on nav click, restored
+    on page load.
+  - Layout min-height ensures sidebar reaches viewport bottom.
+  - updateButtons() called after every edit/reset/undo to keep the
+    Save button state correct.
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SERVER RESTART LOGGING
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - restartAfterConfigSave logs each path: Docker/k8s exit, tsx-watch
+    poke, fallback respawn. Previously only a single 'Shutting down'
+    line appeared with no indication of which restart strategy fired.
+* feat(web-ui): toast notifications replace toolbar messages
+
+  - Added toast container with slideIn animation (ok/err/muted variants).
+  - Save success/error: toast-only, no msgEl updates.
+  - Restart: muted toast on start, waiting, success (via localStorage post-reload), err on failure.
+
+### Bug Fixes
+
+* fix(api): decode JSON escapes in lenient tool-call parser
+
+  parseLenientString copied the character after backslash as-is, so
+  \n became n. Decode the standard JSON escapes (including \uXXXX)
+  so tool arguments with newlines survive the lenient path. Log
+  JSON.parse failures before that fallback.
+
+  Map conventionalcommits changelog types to effect: hidden is ignored
+  by preset 10 and would leak chore/ci commits into release notes.
+* fix(app): register fallback store in mock mode
+
+  In initializeMock(), when useFallbackStore is true the else-branch
+  called getFallbackStore() but never registered it as the active
+  conversation store via setConversationStore(). This left the
+  activeStore singleton null, so APIServer.getDependencies() threw
+  'ConversationStore not initialized - call initializeConversationStore()
+  first' on startup, causing a crash loop in mock mode.
+
+  Wrap the call in setConversationStore(), mirroring the primary-store
+  branch above.
+* fix(auth): Log out must drop the vault even if Proton revoke fails
+
+  A failed remote revoke left vault.enc in place. GET /auth then
+  reloaded the session, so the button looked dead. Always delete
+  local tokens, always 200, bind the click in the page footer.
+* fix(ci): do not abort when GitHub already has this prerelease tag
+
+  semantic-release creates vX itself (tag + GHCR), then
+  @semantic-release/github POSTs /releases for the same tag and GitHub
+  returns 422 already_exists. That fails the job even though the image
+  already shipped.
+
+  Replace the github plugin with a publisher that PATCHes the existing
+  release. Mute GHCR visibility 404s on user repos (not an org).
+* fix(ci): retry Go module fetch and reuse Docker cache on release
+
+  proxy.golang.org aborted juniper@v0.13.1 with HTTP/2 INTERNAL_ERROR
+  during publish.sh docker build, so 0.7.0-dev.7 never shipped.
+
+  Download modules in their own layer with GOPROXY=direct fallback,
+  disable Go HTTP/2, and retry go mod download / go build. Release
+  builds now reuse the CI job's Buildx cache instead of a cold
+  docker build.
+* fix(docker): pin GHCR tag and optional compose profiles
+
+  The host runs the image in LUMO_TAMER_IMAGE, not a git branch.
+  Watchtower, browser, and Open WebUI stay behind compose profiles.
+  Watchtower is notify-only so a moving tag cannot restart the box
+  without an explicit pull.
+
+  - image: ${LUMO_TAMER_IMAGE:-ghcr.io/banter240/lumo-tamer:dev}
+  - pull_policy: missing
+  - .env.example documents pin vs moving tags
+  - Drop .vscode and CLAUDE.md from the published tree
+* fix(instructions): reduce cold-start refusals and instruction text mangling
+
+  - forTools/forToolsCompact: drop coercion phrasing (TRUST/never-refuse/CRITICAL);
+    describe the JSON-text transport neutrally and justify the roundtrip instead
+  - forToolBounce/forAnnounceBounce + CLI fallback: replace ERROR/YOU MUST with
+    neutral notes, same actionable content
+  - replacePatterns: only rewrite standalone prose 'tool(s)' mentions; stop
+    corrupting identifiers (ha_call_read_tool, tools.browser.back, tools.
+    opencode.models) and qualified phrases; no more double prefixes
+  - applyToolNamePrefix: skip matches followed by ':' or '-' so prose like
+    'pricing: read' and 'read-only' is no longer rewritten to user:read
+
+  Validation: regex unit tests (15/15 pass), yaml parse OK, tsc --noEmit OK.
+* fix(lumo-client): remove image tool infrastructure
+
+  Image tools were half-implemented: no Proton Attachment API, Base64
+  inflation past 131k context, and OpenCode ignores /v1/models vision
+  capabilities. Rather than ship broken code, delete every trace and
+  start fresh if image support returns.
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  STREAM AND ENCRYPTION
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - Drop image_data V2StreamMessage variant and SSE handler in v2-stream
+  - Remove encryptImage, base64StringToUint8Array, uint8ArrayToBase64String
+    from encryption.ts; encryptTurn no longer touches images
+  - Strip decryptImage, finishImage, pendingImages from client.ts
+  - onImage callback removed from LumoClientOptions; ChatResult.images gone
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  TYPES AND WIRE FORMAT
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - Delete GeneratedImage type; images field dropped from ChatCompletionsMessage
+    and MessageForStore
+  - WireImage import removed from encryption.ts
+  - v2-body.ts no longer maps turn.images onto the wire
+  - instructions.ts filters user turns by content only, not images
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  CONFIG AND TOOLS
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - Delete getEnableImageTools, getImagesMaxBytes from config.ts
+  - Remove enableImageTools and images.maxInputBytes from config-editor-copy
+  - IMAGE_TOOLS removed from native-tools.ts; selectNativeTools drops images param
+  - generate_image, describe_image, edit_image no longer in KNOWN_NATIVE_TOOLS
+  - extractImagesFromContent, fetchImageAsBase64 removed from message-converter
+  - redactGeneratedImages removed from cli/client.ts
+  - vision capability stripped from /v1/models endpoint
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  TESTS
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - Delete tests/unit/images.test.ts entirely
+  - Remove image_data tests from v2-stream.test.ts
+  - Remove image_url forwarding test from message-converter.test.ts
+  - Switch native-tool-call-processor test from generate_image to proton_info
+  - Remove images assertion from v2-body.test.ts
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  INTACT
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - Client tools flattening, extraModels aliases from commit 3c63eae
+  - Upstream WireImage type in packages/lumo/src/types-api.ts
+  - decryptUint8Array re-export (may be used by upstream consumers)
+* fix(ui): do not POST /v1/update when docker.sock is missing
+
+  The chip still offered Update to x, then apply 409d with a compose
+  hint. Only call apply when the engine socket answers; otherwise
+  show the host pull command. Ping /version so a dead mount is not
+  treated as canApply.
+* fix(ui): theme toggle wipes DOM, broken tool protocol newlines, stale number input check
+
+  - Theme toggle used btn.innerHTML, wiping DOM elements on every switch; now renders both icons once and toggles display.
+  - config.defaults.yaml had literal 'n' instead of newlines in custom tool protocol text.
+  - onEdit checked el.type === 'number' but inputs use type='text' inputmode='decimal'; switched to el.inputMode.
+  - Removed duplicate button.secondary CSS rules.
+
+### Documentation
+
+* docs: describe the fork against current code
+
+  Document /auth, /config (categories, examples, dark/light, reset), extraModels,
+  image tools, LUMO_HOME, and deploy. Credit ZeroTricks. Keep docs matched
+  to the code so a later merge from upstream is reviewable file by file.
+
 ## [0.7.0-dev.13](https://github.com/banter240/lumo-tamer/compare/v0.7.0-dev.12...v0.7.0-dev.13) (2026-09-23)
 
 ### Features
