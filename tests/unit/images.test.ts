@@ -10,6 +10,7 @@ import {
     generatedImageMarkdown,
     stableImageId,
     imagePayloadChars,
+    shouldOfferImageTools,
 } from '../../src/lumo-client/images.js';
 import { selectNativeTools } from '../../src/lumo-client/native-tools.js';
 import { Role, type Turn } from '../../src/lumo-client/types.js';
@@ -84,6 +85,51 @@ describe('selectNativeTools', () => {
         expect(selectNativeTools({ includeInternal: false, webSearch: false, imageTools: true }))
             .toEqual(['generate_image', 'describe_image', 'edit_image']);
         expect(selectNativeTools({ includeInternal: false, webSearch: false })).toEqual([]);
+    });
+});
+
+describe('shouldOfferImageTools', () => {
+    const user = (content: string, images?: ReturnType<typeof img>[]): Turn => ({ role: Role.User, content, ...(images ? { images } : {}) });
+    const asst = (content: string, images?: ReturnType<typeof img>[]): Turn => ({ role: Role.Assistant, content, ...(images ? { images } : {}) });
+    const toolResult = user('[Tool Result: bash]\nok');
+
+    it('offers tools when the user asks for a picture', () => {
+        expect(shouldOfferImageTools([user('Dessine-moi un chat roux')])).toBe(true);
+        expect(shouldOfferImageTools([user('génère une image de montagne')])).toBe(true);
+        expect(shouldOfferImageTools([user('make a logo for my app')])).toBe(true);
+    });
+
+    it('does not offer tools for ordinary requests', () => {
+        expect(shouldOfferImageTools([user('Corrige le bug dans server.ts')])).toBe(false);
+        expect(shouldOfferImageTools([user('lance les tests')])).toBe(false);
+    });
+
+    it('offers tools when the user attaches an image', () => {
+        expect(shouldOfferImageTools([user('<lumo-image id="1" source="user" />', [img('1')])])).toBe(true);
+    });
+
+    it('ignores image markers when looking for intent', () => {
+        expect(shouldOfferImageTools([
+            user('<lumo-image id="1" source="user" />', [img('1')]),
+            asst('a cat'),
+            user('ok'),
+            asst('```json\n{}\n```'),
+            toolResult,
+        ])).toBe(false);
+    });
+
+    it('does not re-draw on tool-loop steps after an image was generated', () => {
+        expect(shouldOfferImageTools([
+            user('dessine un chat'),
+            asst('<lumo-image id="a" source="assistant" />', [img('a')]),
+            toolResult,
+        ])).toBe(false);
+    });
+
+    it('allows follow-up edits on a conversation with images, but not mid tool loop', () => {
+        const history = [user('dessine un chat'), asst('<lumo-image id="a" source="assistant" />', [img('a')])];
+        expect(shouldOfferImageTools([...history, user('rends-le bleu')])).toBe(true);
+        expect(shouldOfferImageTools([...history, user('lis server.ts'), asst('```json\n{}\n```'), toolResult])).toBe(false);
     });
 });
 

@@ -15,7 +15,7 @@
 import { createHash } from 'node:crypto';
 import type { WireImage } from '@lumo/types-api.js';
 import type { RequestEncryptionParams } from '@lumo/lib/lumo-api-client/core/encryptionParams.js';
-import type { Turn } from './types.js';
+import { Role, type Turn } from './types.js';
 
 /** Upstream MAX_IMAGES_PER_REQUEST: older images beyond this are dropped. */
 export const MAX_IMAGES_PER_REQUEST = 10;
@@ -188,6 +188,57 @@ export async function encryptTurnImages<T extends Turn>(turns: T[], encryption: 
             return { ...turn, images };
         }),
     );
+}
+
+/** Words that signal the user wants a picture made (fr/en/es/de/it/pt). */
+const IMAGE_INTENT_RE = new RegExp(
+    '(?<!\\p{L})(?:' + [
+        'images?', 'img', 'pictures?', 'pics?', 'photos?', 'fotos?',
+        'illustr\\p{L}*', 'dessin\\p{L}*', 'dessine\\p{L}*', 'draw\\p{L}*', 'drew',
+        'sketch\\p{L}*', 'croquis', 'peins', 'peindre', 'peinture\\p{L}*', 'paint\\p{L}*',
+        'logos?', 'wallpapers?', "fonds? d['’]\\s?écran", 'posters?', 'affiches?',
+        'portraits?', 'avatars?', 'artwork', 'imagen\\p{L}*', 'imagem\\p{L}*', 'immagin\\p{L}*',
+        'bild\\p{L}*', 'zeichne\\p{L}*', 'dibuj\\p{L}*', 'disegn\\p{L}*', 'desenh\\p{L}*',
+    ].join('|') + ')(?!\\p{L})',
+    'iu',
+);
+
+const MARKER_RE = /<lumo-image\b[^>]*\/>|\[Image omitted:[^\]]*\]/g;
+const TOOL_RESULT_PREFIX = '[Tool Result:';
+
+function isGenuineUserTurn(turn: Turn): boolean {
+    return turn.role === Role.User && !(turn.content ?? '').startsWith(TOOL_RESULT_PREFIX);
+}
+
+/**
+ * Whether to advertise Lumo's image tools on this request.
+ *
+ * The web client only talks to Lumo with a human typing, but agent clients (OpenCode)
+ * send many requests per user message: every tool-loop step, bounces, a huge system
+ * prompt. Offering generate_image on all of them makes Lumo draw images nobody asked
+ * for. So the tools are only offered when:
+ * - the last real user message attached images, or asks for a picture, or follows up
+ *   on a conversation that already has images (e.g. "make it blue");
+ * - and no image was generated since that message (no re-drawing on tool-loop steps).
+ */
+export function shouldOfferImageTools(turns: Turn[]): boolean {
+    let g = turns.length - 1;
+    while (g >= 0 && !isGenuineUserTurn(turns[g])) g--;
+    if (g < 0) return false;
+
+    const after = turns.slice(g + 1);
+    if (after.some((t) => t.role === Role.Assistant && (t.images?.length ?? 0) > 0)) return false;
+
+    const user = turns[g];
+    if ((user.images?.length ?? 0) > 0) return true;
+
+    const text = (user.content ?? '').replace(MARKER_RE, ' ');
+    if (IMAGE_INTENT_RE.test(text)) return true;
+
+    // Follow-up on an existing image ("make it blue"): only when this is the user's own
+    // turn, not a later step of a tool loop.
+    const latestIsUser = g === turns.length - 1;
+    return latestIsUser && turns.slice(0, g).some((t) => (t.images?.length ?? 0) > 0);
 }
 
 /** Safety net: true if any image would be sent in plaintext. */

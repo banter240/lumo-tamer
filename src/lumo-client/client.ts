@@ -50,6 +50,7 @@ import {
     limitImages,
     lumoImageMarker,
     stripImages,
+    shouldOfferImageTools,
 } from './images.js';
 
 // Re-export types for external consumers
@@ -421,7 +422,8 @@ export class LumoClient {
         const tools = selectNativeTools({
             includeInternal: useNativeTools,
             webSearch: getEnableWebSearch(),
-            imageTools: getEnableImageTools(),
+            // Never on bounces; otherwise only when this turn is about images.
+            imageTools: getEnableImageTools() && !isBounce && shouldOfferImageTools(turns),
         });
 
         // Inject instructions at the last moment (kept out of persisted turns).
