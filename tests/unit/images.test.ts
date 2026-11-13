@@ -157,6 +157,31 @@ describe("shouldOfferImageTools", () => {
     }
   });
 
+  it("does not offer generate_image for hedged, conditional requests", () => {
+    for (const text of [
+      // Real agent message seen in production (led to a parasitic portrait
+      // in the middle of a FiveM app-icon config task).
+      "ou au pire creer une image pour l'icone de l'application si le logo que je t'ai donner passe pas enfin n'est pas propre. En gardant la base du logo",
+      "sinon, génère une image de secours",
+      "à défaut, dessine un logo",
+      "otherwise, make an image of a cat",
+      "if that doesn't work, draw a diagram",
+      "as a fallback, create a logo",
+    ]) {
+      expect(shouldOfferImageTools([user(text)]), text).toBe(false);
+    }
+  });
+
+  it("still offers generate_image for firm requests, including icon requests", () => {
+    for (const text of [
+      "crée une image pour l'icône de l'application",
+      "génère l'icône You News maintenant",
+      "make me an image of the app icon",
+    ]) {
+      expect(shouldOfferImageTools([user(text)]), text).toBe(true);
+    }
+  });
+
   it("offers tools when the user attaches an image, even with neutral text", () => {
     expect(shouldOfferImageTools([user("ok", [img("1")])])).toBe(true);
   });
@@ -244,6 +269,17 @@ describe("shouldOfferImageTools", () => {
       shouldOfferImageTools([
         user("dessine un chat"),
         asst('<lumo-image id="a" source="assistant" />', [img("a")]),
+        toolResult,
+      ]),
+    ).toBe(false);
+  });
+
+  it("treats an echoed assistant image marker (no bytes) as already generated", () => {
+    // Some clients replay only the marker text without the WireImage bytes.
+    expect(
+      shouldOfferImageTools([
+        user("dessine un chat"),
+        asst('Voici le chat:\n<lumo-image id="a" source="assistant" />\nVoilà'),
         toolResult,
       ]),
     ).toBe(false);

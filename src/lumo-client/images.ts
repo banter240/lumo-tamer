@@ -340,11 +340,47 @@ const CREATE_IMAGE_RE = new RegExp(
 const NOT_A_PICTURE_RE =
   /(?:docker|container|conteneur|oci|disk|disque|iso|vm|base|os|system|syst[eè]me)\s+images?|images?\s+(?:docker|de\s+base|disque|iso|du\s+conteneur)/giu;
 
+/**
+ * Hedges that make an image request conditional rather than firm:
+ * "ou au pire creer une image ... si le logo passe pas" (real agent case),
+ * "otherwise draw...", "if not, make an image...". A hedge right before the
+ * draw/create verb means the drawing itself is only a fallback — the model
+ * decides, and generating a picture nobody firmly asked for is worse than
+ * not drawing one.
+ */
+const CONDITIONAL_HEDGES = [
+  "au\\s+pire",
+  "[àa]\\s+d[ée]faut",
+  "sinon",
+  "sinon\\s+d'[ée]\\s+abord",
+  "otherwise",
+  "if\\s+not",
+  "if\\s+(?:it|that|this)\\s+(?:does(?:n'?t|\\s+not)|won'?t|fails?)",
+  "worst\\s+case",
+  "at\\s+worst",
+  "as\\s+a\\s+fallback",
+  "as\\s+backup",
+  "or\\s+else",
+  "en\\s+dernier\\s+recours",
+];
+const CONDITIONAL_DRAW_RE = new RegExp(
+  words(CONDITIONAL_HEDGES) +
+    "[^.?!\\n]{0,30}?" +
+    words([...CREATE_VERBS, ...DRAW_VERBS]),
+  "iu",
+);
+
 /** Agent background requests (OpenCode title generation, compaction) must never draw. */
 const HELPER_REQUEST_RE =
   /title generator|thread title|generate a (?:short )?title|summari[sz]e the conversation|structured summary|existing checkpoint/i;
 
 const MARKER_RE = /<lumo-image\b[^>]*\/>|\[Image omitted:[^\]]*\]/g;
+/**
+ * Assistant echo of a generated image without the WireImage bytes (clients may
+ * replay only the marker text). Counts as "an image was already generated" so
+ * the tools are not re-offered after it.
+ */
+const ASSISTANT_IMAGE_MARKER_RE = /<lumo-image\b[^>]*source="assistant"[^>]*\/>/;
 const TOOL_RESULT_PREFIX = "[Tool Result:";
 
 function isGenuineUserTurn(turn: Turn): boolean {
@@ -359,7 +395,10 @@ const hasImages = (t: Turn | undefined) => (t?.images?.length ?? 0) > 0;
 /** True if the text asks for a picture to be made. */
 export function asksForImage(text: string): boolean {
   const clean = text.replace(MARKER_RE, " ").replace(NOT_A_PICTURE_RE, " ");
-  return DRAW_RE.test(clean) || CREATE_IMAGE_RE.test(clean);
+  if (!DRAW_RE.test(clean) && !CREATE_IMAGE_RE.test(clean)) return false;
+  // Hedged request ("au pire creer une image..."): leave the decision to the
+  // model instead of pushing generate_image onto it.
+  return !CONDITIONAL_DRAW_RE.test(clean);
 }
 
 /** Verbs that ask to change an existing picture ("rends-le bleu", "remove the background"). */
@@ -456,7 +495,15 @@ export function selectImageTools(
   const user = turns[g];
   const text = user.content ?? "";
   if (HELPER_REQUEST_RE.test(text)) return [];
-  if (turns.slice(g + 1).some((t) => t.role === Role.Assistant && hasImages(t)))
+  if (
+    turns
+      .slice(g + 1)
+      .some(
+        (t) =>
+          t.role === Role.Assistant &&
+          (hasImages(t) || ASSISTANT_IMAGE_MARKER_RE.test(t.content ?? "")),
+      )
+  )
     return [];
 
   const tools = new Set<ToolName>();
