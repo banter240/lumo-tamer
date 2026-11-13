@@ -8,6 +8,18 @@ describe('isAnnounceWithoutToolCall', () => {
     expect(endsWithDanglingColon("I'll read the files:")).toBe(true);
   });
 
+  it('detects French announcements with a space before the colon (seen live)', () => {
+    for (const text of [
+      "Je finalise : j'ajoute ox_lib au manifest et je vérifie le pattern de tcg-market. D'abord les vérifications :",
+      'Ma commande shell avait une faute de frappe, je corrige et vérifie si le serveur tourne :',
+      'Je regarde la sortie\u00a0:',
+      'Je vérifie\u202f:\n',
+    ]) {
+      expect(isAnnounceWithoutToolCall(text), text).toBe(true);
+    }
+    expect(endsWithDanglingColon('Résultat : 3 fichiers modifiés.')).toBe(false);
+  });
+
   it('is false when a valid tool-call JSON is present', () => {
     const withCall = 'Looking at the repo:\n```json\n{"name":"user:read","arguments":{"path":"a.ts"}}\n```';
     expect(isAnnounceWithoutToolCall(withCall)).toBe(false);

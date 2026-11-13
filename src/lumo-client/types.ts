@@ -14,6 +14,7 @@ export type {
 } from "@lumo/lib/lumo-api-client/core/types.js";
 
 export { Role } from "@lumo/types-api.js";
+import type { ToolName } from "@lumo/lib/lumo-api-client/core/types.js";
 // Local-only types
 
 // API adapter interface
@@ -152,6 +153,8 @@ export interface LumoClientOptions {
   onReasoning?: (content: string) => void;
   /** Bounce once when a completion looks like a truncated tool announcement. */
   coachAnnounceWithoutTool?: boolean;
+  /** Internal: image tools to offer on a bounce (bounces offer none by default). */
+  imageToolsOverride?: ToolName[];
   /** Advertise native Proton tools (proton_info, web_search) to the request.
    * Default true. Set false when custom tools handle transport (e.g. OpenCode)
    * to avoid confusing the model with two competing tool worlds. */

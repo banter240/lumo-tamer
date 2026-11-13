@@ -347,10 +347,30 @@ const HELPER_REQUEST_RE =
 const MARKER_RE = /<lumo-image\b[^>]*\/>|\[Image omitted:[^\]]*\]/g;
 const TOOL_RESULT_PREFIX = "[Tool Result:";
 
+/**
+ * Agent-made user turns: OpenCode's post-compaction checkpoint (its summary
+ * template headings), background-shell completion notices and instruction
+ * notices. Words inside them ("image", "dernière version"…) are not requests.
+ */
+const COMPACTION_HEADINGS_RE =
+  /^#{2,3} (?:Objective|Requirements|Decisions|Work State|Completed|Active|Blocked|Next Move|Relevant Files|Important Context)\s*$/gm;
+const SHELL_NOTICE_RE = /^\s*<shell id="[^"]*" state="/;
+// OpenCode instruction notices sent as user turns: the skills list (full of
+// "image", "web", "generate") and the date change.
+const CLIENT_NOTICE_RE =
+  /^\s*(?:The available skills have changed\.|Today's date is now:|<system-reminder>|<skill_content\b)/;
+
+function isAgentMadeUserText(text: string): boolean {
+  if (SHELL_NOTICE_RE.test(text) || CLIENT_NOTICE_RE.test(text)) return true;
+  return (text.match(COMPACTION_HEADINGS_RE) ?? []).length >= 3;
+}
+
 function isGenuineUserTurn(turn: Turn): boolean {
+  const content = turn.content ?? "";
   return (
     turn.role === Role.User &&
-    !(turn.content ?? "").startsWith(TOOL_RESULT_PREFIX)
+    !content.startsWith(TOOL_RESULT_PREFIX) &&
+    !isAgentMadeUserText(content)
   );
 }
 

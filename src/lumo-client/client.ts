@@ -74,6 +74,9 @@ import {
   selectImageTools,
 } from "./images.js";
 
+/** Native image tool arguments (describe/edit take an image_id) written as text. */
+const IMAGE_ARGS_AS_TEXT_RE = /"image_id"\s*:\s*"/;
+
 // Re-export types for external consumers
 export type { LumoClientOptions, ChatResult };
 
@@ -529,11 +532,15 @@ export class LumoClient {
       );
     }
 
-    // Never on bounces; otherwise only when this turn is about images.
-    const offerImageTools =
-      getEnableImageTools() && !isBounce
-        ? selectImageTools(turns, instructions)
-        : [];
+    // Never on bounces (unless the bounce is about an image tool); otherwise
+    // only when this turn is about images.
+    const offerImageTools = !getEnableImageTools()
+      ? []
+      : options.imageToolsOverride
+        ? options.imageToolsOverride
+        : !isBounce
+          ? selectImageTools(turns, instructions)
+          : [];
     if (offerImageTools.length > 0)
       logger.info(
         { tools: offerImageTools },
@@ -628,6 +635,43 @@ export class LumoClient {
         bounceTurns,
         onChunk,
         options,
+        true,
+      );
+      const titleResult = titlePromise ? await titlePromise : null;
+      const title = titleResult?.content
+        ? postProcessTitle(titleResult.content)
+        : bounced.title;
+      return { ...bounced, title };
+    }
+
+    // Image tool arguments written as text ({"image_id": …} in a code block)
+    // instead of calling the native function: nothing runs and the agent
+    // stops. Ask once more, with the same image tools offered.
+    if (
+      !isBounce &&
+      offerImageTools.length > 0 &&
+      !main.native.toolCall &&
+      IMAGE_ARGS_AS_TEXT_RE.test(main.content)
+    ) {
+      logger.info(
+        { tools: offerImageTools },
+        "Bouncing image tool call written as text",
+      );
+      const bounceTurns: Turn[] = [
+        ...turns,
+        { role: Role.Assistant, content: main.content },
+        {
+          role: Role.User,
+          content:
+            `Note: you wrote the image tool's arguments as text, so nothing ran. ` +
+            `Call your built-in ${offerImageTools.join(" / ")} function directly now ` +
+            `(native function calling, not a JSON code block), then continue.`,
+        },
+      ];
+      const bounced = await this.chatWithHistory(
+        bounceTurns,
+        onChunk,
+        { ...options, imageToolsOverride: offerImageTools },
         true,
       );
       const titleResult = titlePromise ? await titlePromise : null;

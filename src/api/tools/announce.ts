@@ -18,7 +18,8 @@ export function endsWithDanglingColon(content: string): boolean {
   const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
   const last = lines[lines.length - 1] ?? '';
   if (last.length > getDanglingColonThresholds().maxLastLine) return false;
-  return /\S:\s*$/.test(last);
+  // French typography puts a (non-breaking) space before the colon: "Je vérifie :".
+  return /\S[   ]?:\s*$/.test(last);
 }
 
 /** True when the bounceDanglingColon flag is on and the reply announces without emitting a JSON block. */

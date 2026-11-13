@@ -52,6 +52,12 @@ describe("asksForWeb", () => {
     ).toBe(false);
   });
 
+  it("ignores the post-compaction checkpoint OpenCode sends as a user turn", () => {
+    const checkpoint =
+      "## Objective\n- Mettre à jour ox_lib\n## Work State\n### Completed\n- (none)\n## Next Move\n1. Chercher sur internet la dernière version d'ox_lib";
+    expect(asksForWeb([user(checkpoint)])).toBe(false);
+  });
+
   it("never on title / compaction requests", () => {
     expect(
       asksForWeb(
