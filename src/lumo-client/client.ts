@@ -114,6 +114,33 @@ function buildBounceInstruction(toolCall: ParsedToolCall): string {
   return `${instruction}\n${toolCallJson}`;
 }
 
+/**
+ * Transient errors worth retrying: Proton's capacity timeouts ("Please try
+ * again"), temporary unavailability, and transport failures. Seen repeatedly
+ * in production streams; without a retry the agent client aborts the whole
+ * task on the first hiccup.
+ */
+const TRANSIENT_COMPLETION_ERROR_RE =
+  /(timed out waiting for capacity|please try again|temporarily unavailable|overloaded|fetch failed|network|econnreset|econnrefused|etimedout|epipe|socket hang up|terminated|aborted|timed out waiting for response data)/i;
+
+/** Attached by processStream: whether output was already streamed to the client. */
+interface RetryableErrorInfo {
+  hadPartialOutput?: boolean;
+}
+
+function isRetryableCompletionError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const info = error as Error & RetryableErrorInfo;
+  // Never retry when the client may already have received part of the answer.
+  if (info.hadPartialOutput) return false;
+  return TRANSIENT_COMPLETION_ERROR_RE.test(error.message);
+}
+
+/** Retry backoff between attempts (ms). Mutable so tests can shorten it. */
+export const COMPLETION_RETRY_DELAYS_MS = [1500, 4000];
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 function buildAnnounceBounceInstruction(): string {
   if (getConfigMode() === "server") {
     return getServerInstructionsConfig().forAnnounceBounce;
@@ -337,6 +364,12 @@ export class LumoClient {
         usage,
         native: nativeToolProcessor.getResult(),
       };
+    } catch (error) {
+      // Flag whether anything was already streamed so the caller can tell a
+      // clean retry (nothing emitted) from a mid-answer failure.
+      (error as Error & RetryableErrorInfo).hadPartialOutput =
+        content.length > 0 || reasoning.length > 0;
+      throw error;
     } finally {
       // Cancel the upstream body if we stopped early (e.g. misrouted-tool abort).
       if (!streamEnded) {
@@ -427,25 +460,47 @@ export class LumoClient {
       getServerConfig().promptTokenEstimationFactor ?? 1.0,
     );
 
-    const stream = (await this.protonApi({
-      url: params.endpoint,
-      method: "post",
-      data: body,
-      output: "stream",
-    })) as ReadableStream<Uint8Array>;
+    // Retry transient failures (capacity timeout, temporary unavailability,
+    // transport errors) when nothing was streamed yet, so an agent working
+    // through a long task doesn't get killed by a single hiccup.
+    const retryDelaysMs = COMPLETION_RETRY_DELAYS_MS;
+    for (let attempt = 0; ; attempt++) {
+      let result: CompletionResult;
+      try {
+        const stream = (await this.protonApi({
+          url: params.endpoint,
+          method: "post",
+          data: body,
+          output: "stream",
+        })) as ReadableStream<Uint8Array>;
 
-    const result = await this.processStream(stream, encryptionContext, {
-      onChunk: params.onChunk,
-      onReasoning: params.onReasoning,
-      suppressBounce: params.suppressBounce,
-    });
+        result = await this.processStream(stream, encryptionContext, {
+          onChunk: params.onChunk,
+          onReasoning: params.onReasoning,
+          suppressBounce: params.suppressBounce,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const delay = retryDelaysMs[attempt];
+        if (delay === undefined || !isRetryableCompletionError(error)) {
+          logger.warn({ error: message }, "Completion failed (not retryable)");
+          throw error;
+        }
+        logger.warn(
+          { attempt: attempt + 1, delayMs: delay, error: message },
+          "Transient completion error; retrying",
+        );
+        await sleep(delay);
+        continue;
+      }
 
-    // Attach estimated prompt tokens to usage for downstream reporting.
-    if (result.usage) {
-      result.usage.prompt_tokens = estimatedPromptTokens;
+      // Attach estimated prompt tokens to usage for downstream reporting.
+      if (result.usage) {
+        result.usage.prompt_tokens = estimatedPromptTokens;
+      }
+
+      return result;
     }
-
-    return result;
   }
 
   /**

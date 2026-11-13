@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { LumoClient } from '../../src/lumo-client/client.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { LumoClient, COMPLETION_RETRY_DELAYS_MS } from '../../src/lumo-client/client.js';
 import { Role } from '../../src/lumo-client/types.js';
 import type { ProtonApiOptions } from '../../src/lumo-client/types.js';
 import { estimatePromptTokens } from '../../src/app/token-estimate.js';
@@ -135,6 +135,57 @@ describe('LumoClient (Lumo 2.0 chat/completions)', () => {
         expect(res.title).toBe('Title');
         expect(titleCalls).toBe(1);
         expect(messageCalls).toBe(2);
+    });
+
+    describe('transient-error retry', () => {
+        // Real-world stream error seen repeatedly in production:
+        // Proton answers 200 then errors mid-stream when out of capacity.
+        const capacityError = { error: { message: 'API returned error: Request timed out waiting for capacity. Please try again.' } };
+
+        // Shorten the backoff so tests run fast; restore after each test.
+        beforeEach(() => {
+            COMPLETION_RETRY_DELAYS_MS.splice(0, COMPLETION_RETRY_DELAYS_MS.length, 10, 10);
+        });
+        afterEach(() => {
+            COMPLETION_RETRY_DELAYS_MS.splice(0, COMPLETION_RETRY_DELAYS_MS.length, 1500, 4000);
+        });
+
+        it('retries a capacity timeout and returns the retried answer', async () => {
+            let calls = 0;
+            const { client, api } = makeClient(() => {
+                calls++;
+                return calls <= 2 ? [capacityError] : [cc({ content: 'answer after retry' })];
+            });
+            const res = await client.chatWithHistory([{ role: Role.User, content: 'do the task' }]);
+            expect(res.message.content).toBe('answer after retry');
+            expect(api).toHaveBeenCalledTimes(3);
+        });
+
+        it('gives up after exhausting the retries', async () => {
+            const { client, api } = makeClient(() => [capacityError]);
+            await expect(
+                client.chatWithHistory([{ role: Role.User, content: 'hi' }]),
+            ).rejects.toThrow(/timed out waiting for capacity/u);
+            expect(api).toHaveBeenCalledTimes(3);
+        });
+
+        it('does not retry once content was already streamed to the client', async () => {
+            const { client, api } = makeClient(() => [cc({ content: 'partial' }), capacityError]);
+            const chunks: string[] = [];
+            await expect(
+                client.chatWithHistory([{ role: Role.User, content: 'hi' }], (c) => chunks.push(c)),
+            ).rejects.toThrow(/timed out waiting for capacity/u);
+            expect(api).toHaveBeenCalledTimes(1);
+            expect(chunks.join('')).toBe('partial');
+        });
+
+        it('does not retry non-transient errors', async () => {
+            const { client, api } = makeClient(() => [{ error: { message: 'API returned error: invalid model' } }]);
+            await expect(
+                client.chatWithHistory([{ role: Role.User, content: 'hi' }]),
+            ).rejects.toThrow(/invalid model/u);
+            expect(api).toHaveBeenCalledTimes(1);
+        });
     });
 
     it('sends tier and reasoning_effort in the request body', async () => {
