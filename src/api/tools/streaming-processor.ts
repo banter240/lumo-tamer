@@ -8,6 +8,7 @@
 import { logger } from "../../app/logger.js";
 import { contentForLog } from "../../app/log-content.js";
 import { StreamingToolDetector } from "./streaming-tool-detector.js";
+import type { ToolSignature } from "./prefix.js";
 import { generateCallId } from "./call-id.js";
 import type { ParsedToolCall } from "./types.js";
 import type { OpenAIToolCall } from "../types.js";
@@ -42,6 +43,7 @@ export function createStreamingToolProcessor(
   hasCustomTools: boolean,
   emitter: StreamingToolEmitter,
   knownToolNames?: Iterable<string>,
+  toolSignatures?: ToolSignature[],
 ): StreamingToolProcessor {
   if (!hasCustomTools) {
     logger.info(
@@ -51,7 +53,7 @@ export function createStreamingToolProcessor(
     logger.info({ known: [...(knownToolNames ?? [])] }, "[tools] detector on");
   }
   const detector = hasCustomTools
-    ? new StreamingToolDetector({ knownToolNames })
+    ? new StreamingToolDetector({ knownToolNames, toolSignatures })
     : null;
   const toolCallsEmitted: OpenAIToolCall[] = [];
 

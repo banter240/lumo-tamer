@@ -29,7 +29,11 @@ import {
 import { logger } from "../../app/logger.js";
 import { contentForLog } from "../../app/log-content.js";
 import { getCustomToolsConfig } from "../../app/config.js";
-import { stripToolPrefix } from "./prefix.js";
+import {
+  inferToolFromArguments,
+  stripToolPrefix,
+  type ToolSignature,
+} from "./prefix.js";
 import { getMetrics } from "../../app/metrics.js";
 import {
   extractToolCalls,
@@ -52,6 +56,12 @@ export interface StreamingToolDetectorOptions {
    * but names an unknown tool is left as text instead of being executed.
    */
   knownToolNames?: Iterable<string>;
+  /**
+   * Client tool parameter signatures. A fenced arguments-only object
+   * ({"filePath":…,"oldString":…}) with no name and no header is run as the
+   * one tool whose parameters it fits.
+   */
+  toolSignatures?: ToolSignature[];
 }
 
 export class StreamingToolDetector {
@@ -81,12 +91,45 @@ export class StreamingToolDetector {
   // Flattened history Lumo copies: `[Tool Call: bash]`, `Tool Call: bash`, `[Done read]`, `Done read`
   private static readonly HISTORY_HEADER =
     /(?:^|\n|[.:!?])[ \t]*(\[(?:Tool Call:|Done)\s+([^\]]+?)\]|(?:Tool Call:|Done)\s+([A-Za-z0-9_:-]+))[ \t]*(?=\n|$)/i;
+  // Markdown title Lumo sometimes puts above an arguments-only block:
+  // `**user:shell**` / `` `user:read` `` / `user:edit` on its own line (or
+  // glued to the end of a sentence: `…installées :**user:glob**`), then
+  // ```{"command":…}``` or {"command":…}. Only matched once that block starts.
+  private static readonly MARKDOWN_HEADER =
+    /(?:^|\n|[.:!?])[ \t]*((?:\*\*|__|`)?([A-Za-z0-9_-]+:[A-Za-z0-9_-]+|[A-Za-z0-9_-]+)(?:\*\*|__|`)?:?)[ \t]*\n[ \t]*(?:\n[ \t]*)?(?=```|\{)/;
+  /** Text of a markdown header, re-emitted if what follows is not a call. */
+  private markdownHeaderText: string | null = null;
 
   constructor(options: StreamingToolDetectorOptions = {}) {
     const names = options.knownToolNames
       ? [...options.knownToolNames].filter(Boolean)
       : [];
     this.knownToolNames = names.length > 0 ? new Set(names) : null;
+    this.toolSignatures = options.toolSignatures ?? [];
+  }
+
+  private readonly toolSignatures: ToolSignature[];
+
+  /** Fenced arguments-only object → the one client tool it fits, if any. */
+  private inferFromArguments(content: string): ParsedToolCall | null {
+    if (this.toolSignatures.length === 0) return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      return null;
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+    const args = parsed as Record<string, unknown>;
+    if ("name" in args && "arguments" in args) return null;
+    const name = inferToolFromArguments(args, this.toolSignatures);
+    if (!name || !this.isKnownTool(name)) return null;
+    logger.info(
+      `Tool call detected (inferred from arguments): ${name} ${contentForLog(args, 80)}`,
+    );
+    return { name, arguments: args };
   }
 
   private showSnippet(index: number) {
@@ -187,15 +230,32 @@ export class StreamingToolDetector {
         this.jsonTracker.reset();
         return;
       }
-      if (rest.length > 0) {
-        this.headerToolName = null;
+      if (rest.startsWith("```") && this.markdownHeaderText !== null) {
+        // Fall through to fence detection; the header waits for its block.
+      } else if (rest.length > 0) {
+        this.dropHeader(result);
       } else {
         return;
       }
     }
 
-    // Look for code fence start
+    // `**user:shell**` + block: the header comes before the fence it names.
     const opener = this.findFenceOpener();
+    if (!this.headerToolName) {
+      const md = this.findMarkdownHeader();
+      if (md && (!opener || md.index < opener.index)) {
+        logger.debug({ tool: md.name }, "[tools] markdown tool header found");
+        if (md.index > 0) {
+          result.textToEmit += this.pendingText.slice(0, md.index);
+        }
+        this.markdownHeaderText = this.pendingText.slice(md.index, md.end);
+        this.pendingText = this.pendingText.slice(md.end);
+        this.headerToolName = md.name;
+        return;
+      }
+    }
+
+    // Look for code fence start
     if (opener) {
       logger.debug(
         {
@@ -349,11 +409,22 @@ export class StreamingToolDetector {
     this.buffer = stripFenceNoise(this.buffer);
 
     const calls = this.parseAllToolCalls(this.buffer);
+    const fromMarkdown =
+      calls.length === 0 ? this.takeMarkdownHeaderArgs(this.buffer) : null;
+    const inferred =
+      calls.length === 0 && !fromMarkdown && this.markdownHeaderText === null
+        ? this.inferFromArguments(this.buffer)
+        : null;
     if (calls.length > 0) {
       for (const call of calls) this.noteNamedCall(call, result);
+    } else if (fromMarkdown) {
+      this.noteNamedCall(fromMarkdown, result);
+    } else if (inferred) {
+      this.noteNamedCall(inferred, result);
     } else if (this.buffer === "") {
       logger.debug("[tools] dropped empty json fence");
     } else {
+      this.dropHeader(result);
       logger.debug(
         {
           reason: "no tool call in fence body",
@@ -388,11 +459,14 @@ export class StreamingToolDetector {
         if (calls.length > 0) {
           for (const call of calls) this.noteNamedCall(call, result);
         } else {
-          const fromHeader = this.takeHeaderArgs(trimmed);
-          if (fromHeader) {
+          const fromMarkdown = this.takeMarkdownHeaderArgs(trimmed);
+          const fromHeader = fromMarkdown ? null : this.takeHeaderArgs(trimmed);
+          if (fromMarkdown) {
+            this.noteNamedCall(fromMarkdown, result);
+          } else if (fromHeader) {
             this.holdHistoryCall(fromHeader);
           } else {
-            this.headerToolName = null;
+            this.dropHeader(result);
             logger.info(
               { snippet: contentForLog(json, 180) },
               "[tools] not executed: JSON is not a tool call, leaked as text",
@@ -447,8 +521,61 @@ export class StreamingToolDetector {
     };
   }
 
+  /** `**user:shell**` right before a ``` or `{` block. */
+  private findMarkdownHeader(): {
+    index: number;
+    end: number;
+    name: string;
+  } | null {
+    const match = this.pendingText.match(StreamingToolDetector.MARKDOWN_HEADER);
+    if (!match || match.index === undefined) return null;
+    const token = match[1];
+    const raw = match[2];
+    const prefix = getCustomToolsConfig().prefix;
+    const decorated = /^(?:\*\*|__|`)/.test(token);
+    const tokenAt = match[0].indexOf(token);
+    const ownLine = /^\n?$/.test(
+      match[0].slice(0, tokenAt).replace(/[ \t]/g, ""),
+    );
+    // A bare word (e.g. "read") is prose unless it carries the tool prefix;
+    // glued to a sentence, only a decorated header counts.
+    if (!decorated && !(prefix && raw.startsWith(prefix) && ownLine)) {
+      return null;
+    }
+    const name = stripToolPrefix(raw, prefix);
+    if (!this.isKnownTool(name)) return null;
+    return {
+      index: match.index + tokenAt,
+      end: match.index + match[0].length,
+      name,
+    };
+  }
+
+  /** Arguments-only JSON under a markdown header: a real call, not a history echo. */
+  private takeMarkdownHeaderArgs(content: string): ParsedToolCall | null {
+    if (this.markdownHeaderText === null) return null;
+    const call = this.takeHeaderArgs(content);
+    if (call) {
+      this.markdownHeaderText = null;
+      logger.info(
+        `Tool call detected (markdown header): ${call.name} ${contentForLog(call.arguments, 80)}`,
+      );
+    }
+    return call;
+  }
+
+  /** Forget a pending header; re-emit a markdown one since it was not a call. */
+  private dropHeader(result: ProcessResult): void {
+    if (this.markdownHeaderText !== null) {
+      result.textToEmit += this.markdownHeaderText;
+      this.markdownHeaderText = null;
+    }
+    this.headerToolName = null;
+  }
+
   private noteNamedCall(toolCall: ParsedToolCall, result: ProcessResult): void {
     this.sawNamedCall = true;
+    this.markdownHeaderText = null;
     this.headerToolName = null;
     this.pendingHistoryCall = null;
     result.completedToolCalls.push(toolCall);
@@ -673,7 +800,8 @@ export class StreamingToolDetector {
       completedToolCalls: [],
     };
 
-    this.headerToolName = null;
+    // A markdown header still waiting for its block is just text.
+    if (this.state === "normal") this.dropHeader(result);
 
     // Emit any remaining pending text
     if (this.pendingText) {
@@ -701,6 +829,14 @@ export class StreamingToolDetector {
             this.flushHistoryCall(result);
             return result;
           }
+          const fromMarkdown = this.takeMarkdownHeaderArgs(trimmed);
+          if (fromMarkdown) {
+            this.noteNamedCall(fromMarkdown, result);
+            this.jsonTracker.reset();
+            this.state = "normal";
+            this.flushHistoryCall(result);
+            return result;
+          }
           const fromHeader = this.takeHeaderArgs(trimmed);
           if (fromHeader) {
             this.holdHistoryCall(fromHeader);
@@ -712,7 +848,16 @@ export class StreamingToolDetector {
         }
 
         if (this.state === "in_code_fence") {
-          const calls = this.parseAllToolCalls(stripFenceNoise(trackerBuffer));
+          const cleaned = stripFenceNoise(trackerBuffer);
+          const calls = this.parseAllToolCalls(cleaned);
+          const fromMarkdown =
+            calls.length === 0 ? this.takeMarkdownHeaderArgs(cleaned) : null;
+          if (fromMarkdown) calls.push(fromMarkdown);
+          const inferred =
+            calls.length === 0 && this.markdownHeaderText === null
+              ? this.inferFromArguments(cleaned)
+              : null;
+          if (inferred) calls.push(inferred);
           if (calls.length > 0) {
             logger.debug("[tools] salvaged tool call from unclosed fence");
             for (const call of calls) this.noteNamedCall(call, result);
@@ -725,6 +870,7 @@ export class StreamingToolDetector {
           // Unclosed fence at stream end: emit WITH a closer so the
           // client never receives a lone ``` that swallows
           // everything after it as fake code.
+          this.dropHeader(result);
           const body = trackerBuffer.replace(/\n+$/, "");
           logger.debug(
             {
@@ -743,6 +889,7 @@ export class StreamingToolDetector {
       this.jsonTracker.reset();
     }
 
+    this.dropHeader(result);
     this.state = "normal";
     this.flushHistoryCall(result);
     return result;

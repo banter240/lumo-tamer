@@ -61,6 +61,58 @@ export function extractClientToolNames(tools?: OpenAITool[]): string[] {
   return names;
 }
 
+/** Parameter names of one client tool, used to recognise argument-only JSON. */
+export interface ToolSignature {
+  name: string;
+  required: string[];
+  properties: string[];
+}
+
+/** Parameter signatures of the client tools (nested or flat shapes). */
+export function extractClientToolSignatures(tools?: OpenAITool[]): ToolSignature[] {
+  if (!tools || tools.length === 0) return [];
+  const out: ToolSignature[] = [];
+  for (const tool of tools) {
+    const flat = tool as unknown as { name?: string; parameters?: unknown };
+    const name = tool?.function?.name ?? flat?.name;
+    const params = (tool?.function?.parameters ?? flat?.parameters) as
+      | { properties?: Record<string, unknown>; required?: unknown }
+      | undefined;
+    if (!name || !params || typeof params !== 'object') continue;
+    const properties = Object.keys(params.properties ?? {});
+    const required = Array.isArray(params.required)
+      ? params.required.filter((p): p is string => typeof p === 'string')
+      : [];
+    if (properties.length === 0) continue;
+    out.push({ name, required, properties });
+  }
+  return out;
+}
+
+/**
+ * The one tool whose parameters match an argument-only object: every
+ * required parameter present, no key outside its properties. Several
+ * matches are narrowed to the one requiring the most parameters; a tie
+ * is ambiguous and returns null.
+ */
+export function inferToolFromArguments(
+  args: Record<string, unknown>,
+  signatures: ToolSignature[],
+): string | null {
+  const keys = Object.keys(args);
+  if (keys.length === 0) return null;
+  const fits = signatures.filter(
+    (s) =>
+      s.required.length > 0 &&
+      s.required.every((r) => keys.includes(r)) &&
+      keys.every((k) => s.properties.includes(k)),
+  );
+  if (fits.length === 0) return null;
+  const best = Math.max(...fits.map((s) => s.required.length));
+  const top = fits.filter((s) => s.required.length === best);
+  return top.length === 1 ? top[0].name : null;
+}
+
 // ── Regex helpers ────────────────────────────────────────────────────
 
 /**

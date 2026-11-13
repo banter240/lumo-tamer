@@ -21,7 +21,10 @@ import type { Turn } from "../../../lumo-client/index.js";
 import type { ConversationId } from "../../../conversations/types.js";
 import { flattenAndTrackClientTools } from "../../tools/call-id.js";
 import { createStreamingToolProcessor } from "../../tools/streaming-processor.js";
-import { extractClientToolNames } from "../../tools/prefix.js";
+import {
+  extractClientToolNames,
+  extractClientToolSignatures,
+} from "../../tools/prefix.js";
 import {
   buildRequestContext,
   generateChatCompletionId,
@@ -268,6 +271,7 @@ async function handleChatRequest(
       },
     },
     extractClientToolNames(request.tools),
+    extractClientToolSignatures(request.tools),
   );
 
   // Check for command before calling Lumo

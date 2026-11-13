@@ -16,7 +16,10 @@ import type { Turn } from "../../../lumo-client/index.js";
 import type { ConversationId } from "../../../conversations/index.js";
 import { generateCallId } from "../../tools/call-id.js";
 import { createStreamingToolProcessor } from "../../tools/streaming-processor.js";
-import { extractClientToolNames } from "../../tools/prefix.js";
+import {
+  extractClientToolNames,
+  extractClientToolSignatures,
+} from "../../tools/prefix.js";
 import {
   buildRequestContext,
   generateResponseId,
@@ -251,6 +254,7 @@ export async function handleRequest(
         },
       },
       extractClientToolNames(request.tools),
+      extractClientToolSignatures(request.tools),
     );
 
     const emitReasoning = (text: string) => {

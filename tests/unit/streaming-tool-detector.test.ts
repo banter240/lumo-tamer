@@ -344,6 +344,180 @@ describe("StreamingToolDetector", () => {
     });
   });
 
+  describe("arguments-only fences inferred from client tool parameters", () => {
+    // Shapes of OpenCode's tools (parameters trimmed to the relevant ones).
+    const toolSignatures = [
+      {
+        name: "read",
+        required: ["filePath"],
+        properties: ["filePath", "offset", "limit"],
+      },
+      {
+        name: "edit",
+        required: ["filePath", "oldString", "newString"],
+        properties: ["filePath", "oldString", "newString", "replaceAll"],
+      },
+      {
+        name: "write",
+        required: ["filePath", "content"],
+        properties: ["filePath", "content"],
+      },
+      {
+        name: "shell",
+        required: ["command"],
+        properties: ["command", "timeout", "workdir", "description"],
+      },
+      { name: "execute", required: ["code"], properties: ["code"] },
+    ];
+    const opts = {
+      knownToolNames: toolSignatures.map((s) => s.name),
+      toolSignatures,
+    };
+
+    it("runs the unnamed edit + shell fences seen live (turn ended as text)", () => {
+      const detector = new StreamingToolDetector(opts);
+      const { allText, allToolCalls } = processAll(detector, [
+        'Je corrige la requête puis je redémarre la ressource :\n\n```json\n{\n  "filePath": "C:\\\\res\\\\server.lua",\n  "oldString": "a",\n',
+        '  "newString": "b"\n}\n```\n\n```json\n{\n  "command": "rcon.ps1 \'restart ano_ledger\'",\n  "timeout": 30000,\n  "workdir": "C:\\\\FXServer-test"\n}\n```\n',
+      ]);
+      expect(allToolCalls).toEqual([
+        {
+          name: "edit",
+          arguments: {
+            filePath: "C:\\res\\server.lua",
+            oldString: "a",
+            newString: "b",
+          },
+        },
+        {
+          name: "shell",
+          arguments: {
+            command: "rcon.ps1 'restart ano_ledger'",
+            timeout: 30000,
+            workdir: "C:\\FXServer-test",
+          },
+        },
+      ]);
+      expect(allText).toContain("Je corrige");
+      expect(allText).not.toContain("oldString");
+    });
+
+    it("prefers the tool requiring the most matched parameters", () => {
+      const detector = new StreamingToolDetector(opts);
+      const { allToolCalls } = processAll(detector, [
+        '```json\n{"filePath": "a.lua", "content": "x"}\n```',
+      ]);
+      expect(allToolCalls).toEqual([
+        { name: "write", arguments: { filePath: "a.lua", content: "x" } },
+      ]);
+    });
+
+    it("leaves data that fits no tool, or several equally, as text", () => {
+      for (const body of [
+        '{"a": 1}',
+        '{"filePath": "a", "unknownKey": 1}',
+        "{}",
+      ]) {
+        const detector = new StreamingToolDetector(opts);
+        const { allText, allToolCalls } = processAll(detector, [
+          "Exemple :\n```json\n" + body + "\n```",
+        ]);
+        expect(allToolCalls, body).toHaveLength(0);
+        expect(allText, body).toContain(body);
+      }
+      const twins = [
+        { name: "a", required: ["x"], properties: ["x"] },
+        { name: "b", required: ["x"], properties: ["x"] },
+      ];
+      const detector = new StreamingToolDetector({
+        knownToolNames: ["a", "b"],
+        toolSignatures: twins,
+      });
+      expect(
+        processAll(detector, ['```json\n{"x": 1}\n```']).allToolCalls,
+      ).toHaveLength(0);
+    });
+
+    it("does nothing without signatures (other clients)", () => {
+      const detector = new StreamingToolDetector({ knownToolNames: ["shell"] });
+      expect(
+        processAll(detector, ['```json\n{"command": "ls"}\n```']).allToolCalls,
+      ).toHaveLength(0);
+    });
+  });
+
+  describe("markdown header + arguments block", () => {
+    const tools = { knownToolNames: ["shell", "glob", "read", "write"] };
+
+    it("runs **user:shell** followed by a plain fence (seen live: turn ended as text)", () => {
+      const detector = new StreamingToolDetector(tools);
+      const { allText, allToolCalls } = processAll(detector, [
+        'Je regarde d\'abord ce que contient chaque pack :\n\n\n**user:shell**\n```\n{"command": "Get-ChildItem -LiteralPath \'C:\\\\Users\\\\a\'"}\n```',
+      ]);
+      expect(allToolCalls).toEqual([
+        {
+          name: "shell",
+          arguments: { command: "Get-ChildItem -LiteralPath 'C:\\Users\\a'" },
+        },
+      ]);
+      expect(allText).toContain("Je regarde");
+      expect(allText).not.toContain("user:shell");
+      expect(allText).not.toContain("Get-ChildItem");
+    });
+
+    it("runs several headed calls in one reply, across chunk boundaries", () => {
+      const detector = new StreamingToolDetector(tools);
+      const { allText, allToolCalls } = processAll(detector, [
+        'Je continue :**user:glob**\n```\n{"path": "C:\\\\res", "pattern": "**/fx',
+        'manifest.lua"}\n```\n**user:',
+        'shell**\n```json\n{"command": "dir"}\n```',
+      ]);
+      expect(allToolCalls).toEqual([
+        {
+          name: "glob",
+          arguments: { path: "C:\\res", pattern: "**/fxmanifest.lua" },
+        },
+        { name: "shell", arguments: { command: "dir" } },
+      ]);
+      expect(allText.trim()).toBe("Je continue :");
+    });
+
+    it("accepts backtick and plain prefixed headers, and a raw object", () => {
+      for (const header of ["`user:read`", "user:read", "**read**"]) {
+        const detector = new StreamingToolDetector(tools);
+        const { allToolCalls } = processAll(detector, [
+          `Lecture :\n${header}\n{"filePath": "/tmp/a.lua", "limit": 60}`,
+        ]);
+        expect(allToolCalls, header).toEqual([
+          { name: "read", arguments: { filePath: "/tmp/a.lua", limit: 60 } },
+        ]);
+      }
+    });
+
+    it("leaves prose headers and unknown tools alone", () => {
+      for (const reply of [
+        'Résumé\n```\n{"a": 1}\n```',
+        '**Exemple**\n```json\n{"command": "ls"}\n```',
+        '**user:nope**\n```\n{"command": "ls"}\n```',
+      ]) {
+        const detector = new StreamingToolDetector(tools);
+        const { allText, allToolCalls } = processAll(detector, [reply]);
+        expect(allToolCalls, reply).toHaveLength(0);
+        expect(allText, reply).toContain("```");
+      }
+    });
+
+    it("keeps the header text when the block under it is not arguments", () => {
+      const detector = new StreamingToolDetector(tools);
+      const { allText, allToolCalls } = processAll(detector, [
+        "**user:shell**\n```\nGet-ChildItem\n```",
+      ]);
+      expect(allToolCalls).toHaveLength(0);
+      expect(allText).toContain("**user:shell**");
+      expect(allText).toContain("Get-ChildItem");
+    });
+  });
+
   describe("history header echo", () => {
     it("executes Tool Call: name plus args JSON when that is the only call", () => {
       const detector = new StreamingToolDetector({ knownToolNames: ["bash"] });
