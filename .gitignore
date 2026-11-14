@@ -4,6 +4,7 @@ config.yaml
 *.log
 .DS_Store
 sessions/
+video-cache/
 extra-docs/
 secrets/
 browser-data/

@@ -1,6 +1,12 @@
 import { randomUUID } from "crypto";
 import type { Response } from "express";
-import { getCustomToolsConfig } from "../../app/config.js";
+import {
+  getCustomToolsConfig,
+  getEnableImageTools,
+  getServerConfig,
+} from "../../app/config.js";
+import { prepareVideoTurns } from "../../video/inject.js";
+import { hostnameOf, isLoopbackHostname } from "../access.js";
 import { shouldRequestTitle } from "../request-prep.js";
 import { getMetrics } from "../../app/metrics";
 import { logger } from "../../app/logger.js";
@@ -109,6 +115,7 @@ export async function runCompletionAndPersist(
     onReasoning?: (content: string) => void;
   },
 ): Promise<ChatResult> {
+  turns = await withVideoContext(deps, turns, options);
   const result = await deps.queue.add(async () =>
     deps.lumoClient!.chatWithHistory(turns, processor.onChunk, {
       requestTitle: ctx.requestTitle,
@@ -136,6 +143,55 @@ export async function runCompletionAndPersist(
     reasoning: options.enableReasoning ? "true" : "false",
   });
   return result;
+}
+
+/**
+ * Local video files named in user messages → contact sheets, timeline and
+ * transcript (see src/video). Only when enabled, image tools are on (Lumo
+ * reads images through describe_image) and the server listens on this
+ * machine only, since it reads local files.
+ */
+async function withVideoContext(
+  deps: EndpointDependencies,
+  turns: Turn[],
+  options: {
+    modelTier: LumoModelTier;
+    onReasoning?: (content: string) => void;
+  },
+): Promise<Turn[]> {
+  const server = getServerConfig();
+  const video = server.video;
+  if (!video.enabled || !getEnableImageTools() || !deps.lumoClient)
+    return turns;
+  if (
+    !isLoopbackHostname(
+      hostnameOf(
+        server.host.includes(":") && !server.host.startsWith("[")
+          ? `[${server.host}]`
+          : server.host,
+      ),
+    )
+  ) {
+    return turns;
+  }
+  const progress = (msg: string) =>
+    options.onReasoning?.(`[lumo-tamer] ${msg}\n`);
+  return prepareVideoTurns(turns, {
+    settings: video,
+    youtube: { ...video.youtube, ffmpegPath: video.ffmpegPath },
+    progress,
+    summarize: async (turn) => {
+      const result = await deps.queue.add(async () =>
+        deps.lumoClient!.chatWithHistory([turn], undefined, {
+          requestTitle: false,
+          modelTier: options.modelTier,
+          enableReasoning: false,
+          useNativeTools: true,
+        }),
+      );
+      return result.message.content ?? "";
+    },
+  });
 }
 
 /** Persist title if Lumo generated one. No-op for stateless requests. */

@@ -190,6 +190,31 @@ const updatesConfigSchema = z.object({
   githubToken: z.string().optional(),
 });
 
+/** Local video understanding: frames + contact sheets + optional transcript. */
+const videoConfigSchema = z.object({
+  enabled: z.boolean(),
+  ffmpegPath: z.string().min(1),
+  ffprobePath: z.string().min(1),
+  /** Videos up to this length are sent as contact sheets directly. */
+  shortVideoSeconds: z.number().int().positive(),
+  /** Longer videos are summarized by Lumo in segments of this length. */
+  segmentSeconds: z.number().int().min(20),
+  /** Contact sheets attached with the timeline of a long video. */
+  overviewSheets: z.number().int().min(0).max(10),
+  /** Scene-change threshold (0–1) for picking frames. */
+  sceneThreshold: z.number().min(0).max(1),
+  /** Optional local speech-to-text: argv with {audio} and {out} placeholders;
+   * must write {out}.srt. Empty = no transcript. */
+  transcribeCommand: z.array(z.string()),
+  /** YouTube links → local low-res copy + subtitles via yt-dlp. */
+  youtube: z.object({
+    enabled: z.boolean(),
+    ytDlpPath: z.string().min(1),
+    maxDurationSeconds: z.number().int().positive(),
+    maxHeight: z.number().int().min(144).max(1080),
+  }),
+});
+
 const sharedMergedFields = {
   auth: authConfigSchema,
   log: logConfigSchema,
@@ -208,6 +233,7 @@ const serverMergedConfigSchema = z
     promptTokenEstimationFactor: promptTokenEstimationFactorSchema,
     instructions: serverInstructionsConfigSchema,
     metrics: metricsConfigSchema,
+    video: videoConfigSchema,
     bodyLimit: byteSizeSchema,
     host: z.string().min(1),
     port: z.number().int().positive(),

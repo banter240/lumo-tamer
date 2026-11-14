@@ -242,6 +242,44 @@ None are offered on agent background requests (OpenCode title generation, compac
 Inbound (vision): OpenAI `image_url` / `input_image` parts with base64 `data:` URLs (jpeg, png, gif, webp) are forwarded as Lumo images. With encryption on (the default), image bytes are U2L-encrypted with the per-request key exactly like the web client; plaintext images are never sent. Remote http(s) URLs are not fetched (no SSRF from the proxy). Like the web client, only the 10 most recent images of a conversation are sent. Images are not persisted or synced. The default `server.bodyLimit` of `10mb` covers typical screenshots; raise it for batches of large photos.  
 Outbound: generated images are streamed as markdown data URLs (`![lumo:<id>](data:image/jpeg;base64,...)`), decrypted in the proxy with the per-request key. The `lumo:<id>` alt text is the Proton image id: when the client sends that assistant message back, the proxy replays it like the web client (a `<lumo-image source="assistant">` marker plus the encrypted bytes), so a later `edit_image` / `describe_image` can find it. The stored conversation keeps only the marker, not the bytes.
 
+### Videos (local)
+
+Lumo cannot watch videos, and agent clients such as OpenCode do not send video attachments to a text+image model. Instead, name a local video file in your message:
+
+```text
+Regarde cette vidéo et dis-moi ce qui bugue : C:\Users\me\Videos\bug compta.mp4
+```
+
+With `server.video.enabled: true` (and `server.enableImageTools: true`, since Lumo reads images through `describe_image`), lumo-tamer prepares the video on this machine with ffmpeg:
+
+- **Short videos** (≤ `shortVideoSeconds`, 4 min by default) go out as up to 10 contact sheets. Each sheet holds 3×3 timestamped frames, picked on scene changes plus an even grid.
+- **Long videos** are cut into `segmentSeconds` parts (2 min). Lumo describes each part from its own sheet, one extra request per part. Your question then gets that timeline plus a few overview sheets.
+- **Asking about a time** ("à 14:20", "1:02:05") adds a dense sheet: one frame per second around it.
+- **Sound** is included when `transcribeCommand` runs a local speech-to-text that writes `{out}.srt`. For example, [whisper.cpp](https://github.com/ggml-org/whisper.cpp) with its Silero VAD model: VAD avoids Whisper's filler lines on silence and detects the language on real speech.
+
+  ```yaml
+  server:
+    video:
+      enabled: true
+      transcribeCommand: ["whisper-cli", "-m", "models/ggml-large-v3-turbo-q5_0.bin", "-l", "auto", "-np",
+        "--vad", "-vm", "models/ggml-silero-v5.1.2.bin", "-vmsd", "12", "-mc", "0",
+        "-f", "{audio}", "-osrt", "-of", "{out}"]
+  ```
+
+Analyses are cached per file in `video-cache/` next to `sessions/`, so follow-up questions are immediate. Progress shows as thinking ("résumé du segment 3/10…").
+
+The video never leaves the machine: only the sheets (U2L-encrypted like any image) and text reach Lumo. Because it reads local files, the feature only runs when `server.host` is a loopback address. `ffmpegPath`, `ffprobePath` and `transcribeCommand` can only be changed in `config.yaml`, never from the web UI.
+
+When OpenCode replaces an attached video with `ERROR: Cannot read "x.mp4" (this model does not support video input)`, lumo-tamer tells Lumo to ask you for the file's path.
+
+**YouTube links** (`server.video.youtube.enabled`, off by default) work the same way, through [yt-dlp](https://github.com/yt-dlp/yt-dlp). A link such as `https://www.youtube.com/watch?v=…`, `youtu.be/…` or `/shorts/…` is handled like this:
+
+- **Download:** the video is fetched once into `video-cache/yt-<id>/`, at most `maxHeight` (480p) and `maxDurationSeconds` (1 h). Live streams are refused.
+- **Text:** YouTube's subtitles serve as the transcript. Without them, lumo-tamer uses the local speech-to-text if one is set, else YouTube's auto-captions (un-rolled).
+- **Context:** Lumo also gets the title, channel, date and description.
+- **What is fetched:** only the 11-character video id is taken from the message, and the URL is rebuilt on `www.youtube.com`, so a message cannot make the proxy fetch another host.
+- **Privacy:** YouTube sees your IP and which video you asked for. Proton only gets the encrypted sheets and text, as for local files.
+
 ### Web Search
 
 Native web search (plus weather, stock, cryptocurrency) is off so Lumo does not hit the open web unless you want that (HA-only setups, fewer native/custom mix-ups):

@@ -347,7 +347,7 @@ const HELPER_REQUEST_RE =
 const MARKER_RE = /<lumo-image\b[^>]*\/>|\[Image omitted:[^\]]*\]/g;
 const TOOL_RESULT_PREFIX = "[Tool Result:";
 
-function isGenuineUserTurn(turn: Turn): boolean {
+export function isGenuineUserTurn(turn: Turn): boolean {
   return (
     turn.role === Role.User &&
     !(turn.content ?? "").startsWith(TOOL_RESULT_PREFIX)

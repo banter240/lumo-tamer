@@ -605,6 +605,56 @@ const COPY: Record<string, FieldCopy> = {
     hint: "Lumo generate_image, edit_image, describe_image. Off by default. Uses your Lumo image allowance.",
     more: "On: Lumo can create and edit images like the website. Generated images are decrypted in the proxy and streamed as markdown data URLs (![lumo:<id>](data:image/png;base64,...)); sending that message back lets Lumo edit the image. Raise the max request body for follow-ups.",
   },
+  "server.video.enabled": {
+    label: "Local video analysis",
+    hint: "Name a local video file in a message (C:\\clips\\bug.mp4) and lumo-tamer shows it to Lumo as timestamped frames.",
+    more: "Lumo cannot watch videos. lumo-tamer extracts frames with ffmpeg on this machine and sends them as 3×3 contact sheets (encrypted like any image), plus a transcript if speech-to-text is set. Long videos are summarized by Lumo segment by segment first (one extra request per segment, cached). Asking about a time (\"à 14:20\") adds dense frames around it. Needs ffmpeg, native image tools on, and a server listening on 127.0.0.1.",
+  },
+  "server.video.ffmpegPath": {
+    label: "ffmpeg command",
+    hint: "Path or name of ffmpeg. Read-only here.",
+  },
+  "server.video.ffprobePath": {
+    label: "ffprobe command",
+    hint: "Path or name of ffprobe. Read-only here.",
+  },
+  "server.video.shortVideoSeconds": {
+    label: "Short video limit (s)",
+    hint: "Up to this length, the video is sent as contact sheets directly (one frame every ~3 s).",
+  },
+  "server.video.segmentSeconds": {
+    label: "Segment length (s)",
+    hint: "Longer videos are summarized by Lumo in parts of this length (one request each, cached).",
+  },
+  "server.video.overviewSheets": {
+    label: "Overview sheets",
+    hint: "Contact sheets (9 frames each) sent with the timeline of a long video.",
+  },
+  "server.video.sceneThreshold": {
+    label: "Scene-change threshold",
+    hint: "0–1. Lower keeps more frames at cuts; higher only big changes.",
+  },
+  "server.video.youtube.enabled": {
+    label: "YouTube links",
+    hint: "A YouTube link in a message is downloaded in low resolution (yt-dlp) and analysed like a local video.",
+    more: "YouTube sees your IP and the video you asked for; Proton only gets the encrypted contact sheets and text, as for local videos. Uses YouTube subtitles when there are any. Only youtube.com / youtu.be video ids are used, no other URL is fetched.",
+  },
+  "server.video.youtube.ytDlpPath": {
+    label: "yt-dlp command",
+    hint: "Path or name of yt-dlp. Read-only here.",
+  },
+  "server.video.youtube.maxDurationSeconds": {
+    label: "YouTube max length (s)",
+    hint: "Longer videos (and live streams) are refused.",
+  },
+  "server.video.youtube.maxHeight": {
+    label: "YouTube resolution",
+    hint: "Max height downloaded (480 is enough for contact sheets).",
+  },
+  "server.video.transcribeCommand": {
+    label: "Speech-to-text command",
+    hint: "Optional local transcription, e.g. whisper-cli with {audio} and {out}; must write {out}.srt. Read-only here.",
+  },
   "server.customTools.enabled": {
     label: "Honor client tools",
     hint: "Honor tools from HA, OpenCode, etc. Off ignores client tools.",

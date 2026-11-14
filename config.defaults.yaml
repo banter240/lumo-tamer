@@ -193,6 +193,36 @@ server:
   # Counts against your Lumo image allowance. Off unless you want it.
   enableImageTools: false
 
+  # Local video understanding. Lumo cannot watch videos; when a message names
+  # a local video file (e.g. C:\clips\bug.mp4), lumo-tamer extracts
+  # timestamped frames with ffmpeg on this machine and sends them as 3x3
+  # contact sheets (U2L-encrypted like any image), plus a transcript if a
+  # local speech-to-text command is set. Long videos are first summarized by
+  # Lumo segment by segment; asking about a time ("à 14:20") attaches dense
+  # frames around it. The video never leaves this machine. Needs ffmpeg and
+  # enableImageTools (Lumo reads images through describe_image). Only for
+  # servers listening on this machine (server.host 127.0.0.1).
+  video:
+    enabled: false
+    ffmpegPath: "ffmpeg"
+    ffprobePath: "ffprobe"
+    shortVideoSeconds: 240
+    segmentSeconds: 120
+    overviewSheets: 4
+    sceneThreshold: 0.3
+    # e.g. ["whisper-cli", "-m", "models/ggml-base.bin", "-l", "auto", "-f", "{audio}", "-osrt", "-of", "{out}"]
+    transcribeCommand: []
+    # YouTube links in a message: yt-dlp fetches a low-resolution copy and the
+    # subtitles (YouTube's own, else auto-captions when no local speech-to-text
+    # is set) into video-cache/, then the video is analysed like a local file.
+    # Off by default: YouTube sees your IP and which video you asked for.
+    # Only youtube.com / youtu.be video ids are used; no other URL is fetched.
+    youtube:
+      enabled: false
+      ytDlpPath: "yt-dlp"
+      maxDurationSeconds: 3600
+      maxHeight: 480
+
   # Honor tools[] from the client (OpenCode, HA, …). Off = ignore client tools.
   # WARNING: When on, Lumo can trigger actions via those clients.
   customTools:
