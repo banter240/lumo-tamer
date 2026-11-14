@@ -340,6 +340,20 @@ const CREATE_IMAGE_RE = new RegExp(
 const NOT_A_PICTURE_RE =
   /(?:docker|container|conteneur|oci|disk|disque|iso|vm|base|os|system|syst[eè]me)\s+images?|images?\s+(?:docker|de\s+base|disque|iso|du\s+conteneur)/giu;
 
+/** Meta mentions of image generation never count as a request: bug reports
+ *  ("la génération d'image"), tool names ("generate_image"), participles
+ *  ("l'image générée") and stop requests ("arrête de générer"). */
+const META_IMAGE_RE = new RegExp(
+  [
+    "(?:generate|edit|describe)_image\\b",
+    "g[ée]n[ée]r(?:ation|ations)\\s+d['’]?\\s?images?|image\\s+generations?",
+    "images?\\s+(?:g[ée]n[ée]r|generat)\\p{L}*",
+    "(?:arr[êe]t\\p{L}*|stop\\p{L}*|cess\\p{L}*|sans)\\s+(?:de\\s+|d['’]\\s+)?(?:g[ée]n\\p{L}*|generat\\p{L}*)",
+    "(?:g[ée]n[ée]r[ée](?:e|s)?|generated|créé(?:e|s)?|created)(?!\\p{L})",
+  ].join("|"),
+  "giu",
+);
+
 /** Agent background requests (OpenCode title generation, compaction) must never draw. */
 const HELPER_REQUEST_RE =
   /title generator|thread title|generate a (?:short )?title|summari[sz]e the conversation|structured summary|existing checkpoint/i;
@@ -356,9 +370,13 @@ function isGenuineUserTurn(turn: Turn): boolean {
 
 const hasImages = (t: Turn | undefined) => (t?.images?.length ?? 0) > 0;
 
-/** True if the text asks for a picture to be made. */
+/** True if the text asks for a picture to be made. Meta mentions (bug
+ *  reports, tool names, stop requests) never count. */
 export function asksForImage(text: string): boolean {
-  const clean = text.replace(MARKER_RE, " ").replace(NOT_A_PICTURE_RE, " ");
+  const clean = text
+    .replace(MARKER_RE, " ")
+    .replace(NOT_A_PICTURE_RE, " ")
+    .replace(META_IMAGE_RE, " ");
   return DRAW_RE.test(clean) || CREATE_IMAGE_RE.test(clean);
 }
 
@@ -437,7 +455,8 @@ export function asksForImageEdit(
  * user message:
  * - asks for a picture -> generate_image;
  * - attached an image -> describe_image, plus edit_image only if it asks to change
- *   the picture (a screenshot sent for context is never edited);
+ *   the picture (a screenshot sent for context is never edited); offered only on
+ *   the request that directly answers that message, never on later tool-loop steps;
  * - directly answers an assistant message that showed an image and asks for a
  *   change ("make it blue") -> edit_image + describe_image.
  * Never on helper requests (title / summary), nor again on tool-loop steps once an
@@ -461,7 +480,11 @@ export function selectImageTools(
 
   const tools = new Set<ToolName>();
   if (asksForImage(text)) tools.add("generate_image");
-  if (hasImages(user)) {
+  // Attachments: only on the request that directly answers the image-bearing
+  // message. Later tool-loop steps already carry the description in the
+  // transcript; re-offering describe_image makes the agent describe the
+  // screenshot again instead of continuing the actual task.
+  if (hasImages(user) && g === turns.length - 1) {
     tools.add("describe_image");
     if (asksForImageEdit(text, true)) tools.add("edit_image");
   }

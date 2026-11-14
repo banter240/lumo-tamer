@@ -128,6 +128,23 @@ describe("shouldOfferImageTools", () => {
   });
   const toolResult = user("[Tool Result: bash]\nok");
 
+  it("does not offer tools when the user merely mentions image generation", () => {
+    // Real case: reporting a bug about parasitic image generation used to be
+    // matched as a request ("la generation d'image" == "génère une image"),
+    // advertising generate_image and inviting stray calls.
+    for (const text of [
+      "Il viens d'y avoir 2 appel parasite sur la generation d'image",
+      "Il y a encore des appels parasites sur la generation d'image",
+      "pourquoi tu as généré une image alors que je l'ai pas demandé",
+      "arrête de générer des images",
+      "l'image générée était parasite",
+      "le tool generate_image est proposé",
+      "image generation should be off",
+    ]) {
+      expect(shouldOfferImageTools([user(text)])).toBe(false);
+    }
+  });
+
   it("offers tools when the user asks for a picture", () => {
     for (const text of [
       "Dessine-moi un chat roux",
@@ -247,6 +264,28 @@ describe("shouldOfferImageTools", () => {
         toolResult,
       ]),
     ).toBe(false);
+  });
+
+  it("does not re-offer describe_image on tool-loop steps after an attachment", () => {
+    // Real agent case: user attaches a screenshot (storage bug) to a bug hunt;
+    // the tool loop must keep searching the code, not describe the image again.
+    expect(
+      shouldOfferImageTools([
+        user("le telephone affiche 154 Go de stockage, trouve le bug", [
+          img("1"),
+        ]),
+        asst('```json\n{"name":"user:grep","arguments":{}}\n```'),
+        toolResult,
+      ]),
+    ).toBe(false);
+    // But the request that directly answers the attachment still gets the tools.
+    expect(
+      selectImageTools([
+        user("le telephone affiche 154 Go de stockage, trouve le bug", [
+          img("1"),
+        ]),
+      ]),
+    ).toEqual(["describe_image"]);
   });
 
   it("allows follow-up edits on a conversation with images, but not mid tool loop", () => {
