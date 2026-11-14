@@ -242,6 +242,14 @@ None are offered on agent background requests (OpenCode title generation, compac
 Inbound (vision): OpenAI `image_url` / `input_image` parts with base64 `data:` URLs (jpeg, png, gif, webp) are forwarded as Lumo images. With encryption on (the default), image bytes are U2L-encrypted with the per-request key exactly like the web client; plaintext images are never sent. Remote http(s) URLs are not fetched (no SSRF from the proxy). Like the web client, only the 10 most recent images of a conversation are sent. Images are not persisted or synced. The default `server.bodyLimit` of `10mb` covers typical screenshots; raise it for batches of large photos.  
 Outbound: generated images are streamed as markdown data URLs (`![lumo:<id>](data:image/jpeg;base64,...)`), decrypted in the proxy with the per-request key. The `lumo:<id>` alt text is the Proton image id: when the client sends that assistant message back, the proxy replays it like the web client (a `<lumo-image source="assistant">` marker plus the encrypted bytes), so a later `edit_image` / `describe_image` can find it. The stored conversation keeps only the marker, not the bytes.
 
+**Attached images are read for Lumo** (`server.describeAttachedImages`, on by default with `enableImageTools`). Lumo only sees an image by calling `describe_image`, and in agent mode it often skips that and answers about a screenshot it never looked at. lumo-tamer therefore handles each image Lumo will receive:
+
+- **What is covered:** images you attach, and images a tool returns (a `read` of a `.png`).
+- **How:** each one is read once in a dedicated request, and the description is added as text next to the image.
+- **Cache:** descriptions are cached by image id in `image-descriptions/`, so later agent steps reuse them at no cost. The first reply waits for one extra request per new image.
+- **Privacy:** the extra request goes to Lumo like any other; the images are U2L-encrypted.
+- **Intent:** text that lumo-tamer appends never counts as the user's request when deciding which tools to offer.
+
 ### Web Search
 
 Native web search (plus weather, stock, cryptocurrency) is off so Lumo does not hit the open web unless you want that (HA-only setups, fewer native/custom mix-ups):

@@ -345,9 +345,23 @@ const HELPER_REQUEST_RE =
   /title generator|thread title|generate a (?:short )?title|summari[sz]e the conversation|structured summary|existing checkpoint/i;
 
 const MARKER_RE = /<lumo-image\b[^>]*\/>|\[Image omitted:[^\]]*\]/g;
+
+/**
+ * Context lumo-tamer appends to a user turn (image descriptions, video
+ * timelines, notes) always starts with one of these headers. Its words
+ * ("YOU NEWS", "génère"…) are not the user's request: cut it before reading
+ * intent.
+ */
+const INJECTED_CONTEXT_RE =
+  /\n\n\[(?:Attached image \d+ — what it shows|Video "|YouTube video "|lumo-tamer)[\s\S]*$/;
+
+/** The user's own words in a turn, without context lumo-tamer appended. */
+export function userWords(text: string): string {
+  return text.replace(INJECTED_CONTEXT_RE, "");
+}
 const TOOL_RESULT_PREFIX = "[Tool Result:";
 
-function isGenuineUserTurn(turn: Turn): boolean {
+export function isGenuineUserTurn(turn: Turn): boolean {
   return (
     turn.role === Role.User &&
     !(turn.content ?? "").startsWith(TOOL_RESULT_PREFIX)
@@ -454,7 +468,7 @@ export function selectImageTools(
   if (g < 0) return [];
 
   const user = turns[g];
-  const text = user.content ?? "";
+  const text = userWords(user.content ?? "");
   if (HELPER_REQUEST_RE.test(text)) return [];
   if (turns.slice(g + 1).some((t) => t.role === Role.Assistant && hasImages(t)))
     return [];
@@ -493,7 +507,7 @@ export function latestUserRequestText(
   let g = turns.length - 1;
   while (g >= 0 && !isGenuineUserTurn(turns[g])) g--;
   if (g < 0) return null;
-  const text = (turns[g].content ?? "").replace(MARKER_RE, " ");
+  const text = userWords(turns[g].content ?? "").replace(MARKER_RE, " ");
   return HELPER_REQUEST_RE.test(text) ? null : text;
 }
 

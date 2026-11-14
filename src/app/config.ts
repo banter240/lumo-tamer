@@ -208,6 +208,7 @@ const serverMergedConfigSchema = z
     promptTokenEstimationFactor: promptTokenEstimationFactorSchema,
     instructions: serverInstructionsConfigSchema,
     metrics: metricsConfigSchema,
+    describeAttachedImages: z.boolean(),
     bodyLimit: byteSizeSchema,
     host: z.string().min(1),
     port: z.number().int().positive(),

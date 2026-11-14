@@ -600,6 +600,11 @@ const COPY: Record<string, FieldCopy> = {
     hint: "Lumo native web_search, weather, stock, crypto. Off so Lumo does not search unless you turn it on. On matches the Lumo website.",
     more: "On: Lumo may call native web_search / weather / stock / crypto like the website. That mixes with custom tools and is a common source of misrouted calls. Off unless you want those extras.",
   },
+  "server.describeAttachedImages": {
+    label: "Describe attached images",
+    hint: "With image tools on: Lumo reads each attached image once and the description is added as text, so agent steps never miss a screenshot.",
+    more: "Lumo only sees an image by calling describe_image, which it often skips in agent mode (it greps instead of looking). One extra request per new image; descriptions are cached under image-descriptions/ and reused on every later step.",
+  },
   "server.enableImageTools": {
     label: "Native image tools",
     hint: "Lumo generate_image, edit_image, describe_image. Off by default. Uses your Lumo image allowance.",

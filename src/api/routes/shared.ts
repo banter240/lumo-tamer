@@ -1,6 +1,11 @@
 import { randomUUID } from "crypto";
 import type { Response } from "express";
-import { getCustomToolsConfig } from "../../app/config.js";
+import {
+  getCustomToolsConfig,
+  getEnableImageTools,
+  getServerConfig,
+} from "../../app/config.js";
+import { describeAttachedImages } from "../../vision/describe-images.js";
 import { shouldRequestTitle } from "../request-prep.js";
 import { getMetrics } from "../../app/metrics";
 import { logger } from "../../app/logger.js";
@@ -109,6 +114,7 @@ export async function runCompletionAndPersist(
     onReasoning?: (content: string) => void;
   },
 ): Promise<ChatResult> {
+  turns = await withImageDescriptions(deps, turns, options);
   const result = await deps.queue.add(async () =>
     deps.lumoClient!.chatWithHistory(turns, processor.onChunk, {
       requestTitle: ctx.requestTitle,
@@ -136,6 +142,50 @@ export async function runCompletionAndPersist(
     reasoning: options.enableReasoning ? "true" : "false",
   });
   return result;
+}
+
+/** One standalone Lumo completion (no title, no reasoning, native tools on). */
+function oneShotLumo(
+  deps: EndpointDependencies,
+  modelTier: LumoModelTier,
+): (turn: Turn) => Promise<string> {
+  return async (turn) => {
+    const result = await deps.queue.add(async () =>
+      deps.lumoClient!.chatWithHistory([turn], undefined, {
+        requestTitle: false,
+        modelTier,
+        enableReasoning: false,
+        useNativeTools: true,
+      }),
+    );
+    return result.message.content ?? "";
+  };
+}
+
+/**
+ * Attached images → a text description next to each (see src/vision). Lumo
+ * only sees an image through describe_image, which it often skips in agent
+ * mode; this makes every step see what the screenshot shows.
+ */
+async function withImageDescriptions(
+  deps: EndpointDependencies,
+  turns: Turn[],
+  options: {
+    modelTier: LumoModelTier;
+    onReasoning?: (content: string) => void;
+  },
+): Promise<Turn[]> {
+  if (
+    !getServerConfig().describeAttachedImages ||
+    !getEnableImageTools() ||
+    !deps.lumoClient
+  ) {
+    return turns;
+  }
+  return describeAttachedImages(turns, {
+    describe: oneShotLumo(deps, options.modelTier),
+    progress: (msg) => options.onReasoning?.(`[lumo-tamer] ${msg}\n`),
+  });
 }
 
 /** Persist title if Lumo generated one. No-op for stateless requests. */

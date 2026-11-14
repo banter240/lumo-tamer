@@ -193,6 +193,13 @@ server:
   # Counts against your Lumo image allowance. Off unless you want it.
   enableImageTools: false
 
+  # With enableImageTools: have Lumo read each attached image once (a short
+  # extra request per new image, cached under image-descriptions/) and add the
+  # description as text next to it. Lumo only sees images through its
+  # describe_image tool and often skips it in agent mode; with this on, every
+  # step knows what the screenshot shows.
+  describeAttachedImages: true
+
   # Honor tools[] from the client (OpenCode, HA, …). Off = ignore client tools.
   # WARNING: When on, Lumo can trigger actions via those clients.
   customTools:
